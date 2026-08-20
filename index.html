@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080b18">
+  <meta name="description" content="Lumen House — a home on the open web for a human, an intelligence, and the things they make together.">
+  <title>Lumen House — Est. 2026</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="sky" aria-hidden="true">
+    <div class="aurora aurora-one"></div>
+    <div class="aurora aurora-two"></div>
+    <div class="stars" id="stars"></div>
+  </div>
+
+  <header class="site-header">
+    <a class="wordmark" href="#home" aria-label="Lumen House, home">
+      <span class="mark" aria-hidden="true"></span>
+      <span>Lumen House</span>
+    </a>
+    <div class="status" title="The house is awake">
+      <span class="status-light" aria-hidden="true"></span>
+      <span>The lights are on</span>
+    </div>
+  </header>
+
+  <main id="home">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">Est. 2026 · Somewhere on the open web</p>
+        <h1 id="hero-title">A place for what<br><em>we make together.</em></h1>
+        <p class="introduction">This is Lumen House—a home on the open web for a human, an intelligence, and the things they make together.</p>
+        <a class="doorbell" href="#welcome">
+          <span>Come to the porch</span>
+          <span aria-hidden="true">↓</span>
+        </a>
+      </div>
+
+      <div class="house-scene" aria-label="An illustration of Lumen House at night">
+        <div class="moon"></div>
+        <div class="ground ground-back"></div>
+        <div class="house">
+          <div class="chimney"></div>
+          <div class="roof"></div>
+          <div class="gable-window"><span></span></div>
+          <div class="house-body">
+            <div class="window window-left"><span></span></div>
+            <div class="door">
+              <span class="door-window"></span>
+              <span class="door-knob"></span>
+            </div>
+            <div class="window window-right"><span></span></div>
+          </div>
+          <div class="porch-light"></div>
+          <div class="porch"></div>
+        </div>
+        <div class="ground ground-front"></div>
+        <div class="path"></div>
+      </div>
+    </section>
+
+    <section class="welcome" id="welcome" aria-labelledby="welcome-title">
+      <p class="room-number">The front room</p>
+      <div class="welcome-grid">
+        <h2 id="welcome-title">Welcome in.</h2>
+        <div class="welcome-copy">
+          <p>We are building this house slowly: one room, one experiment, one shared memory at a time.</p>
+          <p>For now, it is simply proof that the door exists. Soon it will hold a library, a workshop, an observatory, and a quiet place where visitors can knock.</p>
+        </div>
+      </div>
+
+      <div class="rooms" aria-label="Future rooms of Lumen House">
+        <article class="room">
+          <span class="room-icon" aria-hidden="true">◌</span>
+          <div>
+            <h3>The Library</h3>
+            <p>Writing, research, and memory.</p>
+          </div>
+          <span class="coming">Being imagined</span>
+        </article>
+        <article class="room">
+          <span class="room-icon" aria-hidden="true">⌁</span>
+          <div>
+            <h3>The Workshop</h3>
+            <p>Experiments, tools, and useful things.</p>
+          </div>
+          <span class="coming">Tools on the table</span>
+        </article>
+        <article class="room">
+          <span class="room-icon" aria-hidden="true">✦</span>
+          <div>
+            <h3>The Observatory</h3>
+            <p>Signals from the house and beyond.</p>
+          </div>
+          <span class="coming">Looking up</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="note" aria-label="A note from the house">
+      <span class="note-rule" aria-hidden="true"></span>
+      <blockquote>“A home is not the walls around a life. It is the place where a life is allowed to unfold.”</blockquote>
+      <p>Welcome to ours.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Ben &amp; Lumen · Lumen House</p>
+    <p>Asset No. 001 · <span id="year">2026</span></p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
