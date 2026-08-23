@@ -419,6 +419,157 @@ h2 {
 .room p { margin-bottom: 0; color: var(--muted); font-size: 0.9rem; }
 .coming { color: #777890; font-size: 0.68rem; letter-spacing: 0.13em; text-transform: uppercase; }
 
+.journey {
+  width: min(1180px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 130px 0;
+  border-top: 1px solid var(--line);
+}
+
+.journey-heading {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 8vw;
+  align-items: end;
+  margin-bottom: 72px;
+}
+
+.journey-heading h2 { margin-bottom: 10px; }
+
+.journey-subtitle {
+  margin-bottom: 0;
+  color: var(--gold-soft);
+  font-family: var(--serif);
+  font-size: clamp(1.35rem, 2.3vw, 2rem);
+}
+
+.journey-intro {
+  margin-bottom: 7px;
+  color: var(--lavender);
+  font-family: var(--serif);
+  font-size: 1.2rem;
+  line-height: 1.62;
+}
+
+.progress-panel {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.7fr) minmax(0, 1.3fr);
+  gap: clamp(45px, 8vw, 110px);
+  align-items: center;
+  padding: clamp(38px, 6vw, 74px);
+  border: 1px solid rgba(255, 226, 168, 0.18);
+  border-radius: 4px;
+  background:
+    radial-gradient(circle at 18% 50%, rgba(255, 200, 107, 0.11), transparent 22rem),
+    rgba(255, 255, 255, 0.018);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035), 0 28px 80px rgba(0, 0, 0, 0.15);
+}
+
+.progress-orbit {
+  --progress: 35%;
+  position: relative;
+  width: min(100%, 280px);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: conic-gradient(var(--gold) 0 var(--progress), rgba(255, 255, 255, 0.08) var(--progress) 100%);
+  box-shadow: 0 0 56px rgba(255, 200, 107, 0.1);
+}
+
+.progress-orbit::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border-radius: inherit;
+  background: var(--night);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.progress-center {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.progress-center strong {
+  font-family: var(--serif);
+  font-size: clamp(4.5rem, 8vw, 6.7rem);
+  font-weight: 400;
+  letter-spacing: -0.07em;
+  line-height: 0.9;
+}
+
+.progress-center strong span { color: var(--gold); font-size: 0.38em; vertical-align: top; }
+.progress-center > span { margin-top: 16px; color: var(--muted); font-size: 0.64rem; letter-spacing: 0.15em; text-transform: uppercase; }
+
+.checkpoint-date {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 26px;
+}
+
+.checkpoint-date span { color: var(--muted); font-size: 0.65rem; letter-spacing: 0.16em; text-transform: uppercase; }
+.checkpoint-date time { color: var(--gold-soft); font-family: var(--serif); font-size: clamp(1.8rem, 4vw, 3rem); }
+.progress-copy > p { max-width: 42rem; color: var(--lavender); font-family: var(--serif); font-size: 1.12rem; line-height: 1.65; }
+.progress-copy .estimate-note { margin: 28px 0 0; color: var(--muted); font-family: var(--sans); font-size: 0.72rem; letter-spacing: 0.04em; }
+.estimate-note span { margin-right: 7px; color: var(--gold); }
+
+.capability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 72px;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.capability-card {
+  min-height: 270px;
+  padding: clamp(28px, 4vw, 48px);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.capability-card-wide { grid-column: 1 / -1; min-height: auto; }
+.capability-kicker { color: var(--gold-soft); font-size: 0.66rem; letter-spacing: 0.15em; text-transform: uppercase; }
+.capability-card h3 { margin: 18px 0 24px; font-family: var(--serif); font-size: clamp(1.55rem, 3vw, 2.25rem); font-weight: 400; }
+.capability-card ul { margin: 0; padding: 0; display: grid; gap: 11px; color: var(--muted); list-style: none; }
+.capability-card li { position: relative; padding-left: 18px; line-height: 1.5; }
+.capability-card li::before { content: "·"; position: absolute; left: 0; color: var(--gold); }
+.capability-card-wide ul { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
+
+.journey-architecture {
+  padding: 65px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+
+.journey-architecture > p { color: var(--muted); font-size: 0.65rem; letter-spacing: 0.16em; text-transform: uppercase; }
+.journey-architecture div { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: center; color: var(--lavender); font-family: var(--serif); font-size: clamp(1rem, 2vw, 1.35rem); }
+.journey-architecture span:first-child,
+.journey-architecture span:nth-child(3) { color: var(--gold-soft); }
+.journey-architecture i { color: #686a82; font-family: var(--sans); font-size: 0.8em; font-style: normal; }
+
+.journey-history {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 8vw;
+  padding-top: 80px;
+}
+
+.journey-history h3 { max-width: 20rem; font-family: var(--serif); font-size: clamp(2rem, 4vw, 3.25rem); font-weight: 400; }
+.checkpoint-list { margin: 0; padding: 0; list-style: none; }
+.checkpoint-list li { display: grid; grid-template-columns: 100px 14px 1fr; gap: 18px; align-items: start; }
+.checkpoint-list time { padding-top: 2px; color: var(--muted); font-size: 0.72rem; }
+.checkpoint-marker { width: 10px; height: 10px; margin-top: 3px; border: 2px solid var(--night); border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 1px var(--gold), 0 0 14px rgba(255, 200, 107, 0.5); }
+.checkpoint-list div { display: flex; flex-direction: column; gap: 8px; padding-bottom: 34px; }
+.checkpoint-list strong { color: var(--paper); font-family: var(--serif); font-size: 1.25rem; font-weight: 400; }
+.checkpoint-list div span { color: var(--muted); line-height: 1.55; }
+
 .note {
   width: min(790px, calc(100% - 48px));
   margin: 60px auto 170px;
@@ -471,16 +622,28 @@ footer p { margin: 0; }
   .house-scene { min-height: 510px; order: -1; }
   .hero-copy { text-align: center; }
   .introduction, .doorbell { margin-left: auto; margin-right: auto; }
-  .welcome-grid { grid-template-columns: 1fr; gap: 20px; }
+  .welcome-grid, .journey-heading, .journey-history { grid-template-columns: 1fr; gap: 20px; }
+  .progress-panel { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 560px) {
-  .site-header, .hero, .welcome, footer { width: min(100% - 32px, 1180px); }
+  .site-header, .hero, .welcome, .journey, footer { width: min(100% - 32px, 1180px); }
   .status span:last-child { display: none; }
   .hero { padding-top: 40px; }
   .house-scene { min-height: 390px; transform: scale(0.78); transform-origin: center top; margin-bottom: -70px; }
   h1 { font-size: clamp(3.1rem, 16vw, 5rem); }
   .welcome { padding: 90px 0; }
+  .journey { padding: 90px 0; }
+  .journey-heading { margin-bottom: 48px; }
+  .progress-panel { padding: 36px 24px; }
+  .progress-orbit { width: 225px; }
+  .capability-grid { grid-template-columns: 1fr; margin-top: 48px; }
+  .capability-card-wide { grid-column: auto; }
+  .capability-card-wide ul { grid-template-columns: 1fr; gap: 11px; }
+  .journey-architecture { text-align: left; }
+  .journey-architecture div { justify-content: flex-start; }
+  .journey-history { padding-top: 60px; }
+  .checkpoint-list li { grid-template-columns: 88px 12px 1fr; gap: 12px; }
   .room { grid-template-columns: 38px 1fr; padding: 20px 0; }
   .room:hover { padding: 20px 10px; }
   .coming { grid-column: 2; }
