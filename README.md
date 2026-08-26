@@ -15,6 +15,12 @@ The “Lumen Journey / Skills & Capabilities” section in `index.html` is desig
 
 The percentage is a directional estimate of progress toward the broader Lumen House vision, not an exact completion metric.
 
+## House relics
+
+The Mantelpiece records a small number of meaningful public artifacts. Relic
+artwork is stored locally in `assets/` so the page remains self-contained; its
+onchain record and original public metadata remain linked for verification.
+
 ## Local preview
 
 Serve this directory with any static file server, then open `index.html` through that server.

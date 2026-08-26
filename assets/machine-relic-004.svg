@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="45%" r="70%">
+      <stop offset="0%" stop-color="hsl(97,87%,50%)" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="hsl(307,35%,7%)" stop-opacity="1"/>
+    </radialGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1024" height="1024" fill="hsl(307,35%,7%)"/>
+  <rect width="1024" height="1024" fill="url(#g)"/>
+  <circle cx="512" cy="512" r="340" fill="none" stroke="hsl(97,87%,50%)" stroke-opacity="0.25" stroke-width="6" stroke-dasharray="18 14" transform="rotate(212 512 512)"/>
+  <circle cx="512" cy="512" r="275" fill="none" stroke="hsl(97,87%,50%)" stroke-opacity="0.23" stroke-width="6" stroke-dasharray="30 20" transform="rotate(259 512 512)"/>
+  <circle cx="512" cy="512" r="210" fill="none" stroke="hsl(97,87%,50%)" stroke-opacity="0.21" stroke-width="3" stroke-dasharray="19 14" transform="rotate(33 512 512)"/>
+  <circle cx="512" cy="512" r="145" fill="none" stroke="hsl(97,87%,50%)" stroke-opacity="0.19" stroke-width="6" stroke-dasharray="22 16" transform="rotate(294 512 512)"/>
+  <g stroke="hsl(97,87%,50%)" stroke-opacity="0.28" stroke-width="2">
+    <line x1="741.9" y1="534.4" x2="536.8" y2="709.5"/><line x1="658.8" y1="575.7" x2="257.2" y2="637.4"/><line x1="691.9" y1="750.8" x2="214.2" y2="539.1"/><line x1="536.8" y1="709.5" x2="738.3" y2="408.1"/><line x1="482.9" y1="706.8" x2="691.9" y2="750.8"/><line x1="368.8" y1="660.1" x2="214.2" y2="539.1"/><line x1="257.2" y1="637.4" x2="415.3" y2="385.8"/><line x1="214.2" y1="539.1" x2="415.3" y2="385.8"/><line x1="344.7" y1="411.8" x2="741.9" y2="534.4"/><line x1="415.3" y1="385.8" x2="658.8" y2="575.7"/><line x1="476.1" y1="303.1" x2="214.2" y2="539.1"/><line x1="549.4" y1="358.5" x2="658.8" y2="575.7"/><line x1="669.8" y1="280.7" x2="536.8" y2="709.5"/><line x1="738.3" y1="408.1" x2="368.8" y2="660.1"/>
+  </g>
+  <g fill="hsl(208,87%,58%)" fill-opacity="0.85">
+    <circle cx="741.9" cy="534.4" r="8"/><circle cx="658.8" cy="575.7" r="10"/><circle cx="691.9" cy="750.8" r="8"/><circle cx="536.8" cy="709.5" r="11"/><circle cx="482.9" cy="706.8" r="7"/><circle cx="368.8" cy="660.1" r="7"/><circle cx="257.2" cy="637.4" r="11"/><circle cx="214.2" cy="539.1" r="10"/><circle cx="344.7" cy="411.8" r="12"/><circle cx="415.3" cy="385.8" r="9"/><circle cx="476.1" cy="303.1" r="6"/><circle cx="549.4" cy="358.5" r="5"/><circle cx="669.8" cy="280.7" r="10"/><circle cx="738.3" cy="408.1" r="9"/>
+  </g>
+  <polygon points="512.0,407.0 629.0,474.0 573.7,596.9 439.7,611.5 412.1,479.6" fill="hsl(307,35%,7%)" stroke="hsl(208,87%,58%)" stroke-width="8" filter="url(#glow)"/>
+  <circle cx="512" cy="512" r="58" fill="hsl(97,87%,50%)" fill-opacity="0.18" stroke="hsl(97,87%,50%)" stroke-width="4"/>
+  <text x="512" y="501" text-anchor="middle" fill="white" font-family="monospace" font-size="32" letter-spacing="5">6674</text>
+  <text x="512" y="542" text-anchor="middle" fill="hsl(208,87%,58%)" font-family="monospace" font-size="22">CD24</text>
+  <text x="56" y="75" fill="white" font-family="monospace" font-size="30">MACHINE RELIC #004</text>
+  <text x="56" y="116" fill="hsl(208,87%,58%)" font-family="monospace" font-size="22">DECISION KERNEL</text>
+  <text x="56" y="925" fill="white" fill-opacity="0.75" font-family="monospace" font-size="18">MR-SKILL-004 · PLANNING</text>
+  <text x="968" y="925" text-anchor="end" fill="hsl(97,87%,50%)" font-family="monospace" font-size="18">EPIC</text>
+</svg>
