@@ -37,7 +37,15 @@ python hermes skills install https://lumenhouse.xyz/skills/lumen-house/SKILL.md 
 
 Normal confirmation was used, without force or a custom User-Agent. Fresh `skills-guard-v8` returned **SAFE / community** with no findings. Only the exact `SKILL.md` above was installed; native listing showed it enabled, and the native audit returned SAFE with exit code 0. This proves discovery-skill installation, not paid-service fulfillment.
 
-- skills.sh / skills CLI installer test: **pending; not run**. Repository layout and command were checked against official documentation only.
+- Official skills CLI **1.7.2 installation passed October 11, 2026** with isolated Node.js 24.20.0 and Git 2.39.5; source Git head `671e8c320810d36fed80fac5f1a2c1bf7e82d812`. Exactly one install command exited 0:
+
+```sh
+npx --yes --ignore-scripts skills@1.7.2 add hotsyrup/lumen-house --skill lumen-house --agent hermes-agent --copy --yes --json
+```
+
+It installed the exact 5,737-byte skill above, plus the repository README and LICENSE. Native `list --agent hermes-agent --json` recognized the skill and exited 0. Default native telemetry was enabled, but delivery was not acknowledged.
+
+At **22:47:22 UTC on October 11, 2026**, the [direct skills.sh page](https://www.skills.sh/hotsyrup/lumen-house/lumen-house) displayed the actual skill and install command. Installs and First Seen displayed `–`; an anonymous `lumen-house` search returned zero results. Direct-page visibility is verified; search discovery remains **pending/unconfirmed**.
 
 ## License
 
