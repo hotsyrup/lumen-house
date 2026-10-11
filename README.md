@@ -4,6 +4,10 @@ The first room of [lumenhouse.xyz](https://lumenhouse.xyz): a quiet home on the 
 
 This is a dependency-free static site designed for GitHub Pages. It contains no trackers, cookies, external fonts, or third-party scripts.
 
+## Agent discovery skill
+
+[Lumen House discovery skill](skills/lumen-house/README.md) helps Hermes and other compatible agents read current offers and prepare a proposal for their user's approval.
+
 ## Monthly journey update
 
 The “Lumen Journey / Skills & Capabilities” section in `index.html` is designed to be updated in place each month:
