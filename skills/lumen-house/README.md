@@ -45,7 +45,9 @@ npx --yes --ignore-scripts skills@1.7.2 add hotsyrup/lumen-house --skill lumen-h
 
 It installed the exact 5,737-byte skill above, plus the repository README and LICENSE. Native `list --agent hermes-agent --json` recognized the skill and exited 0. Default native telemetry was enabled, but delivery was not acknowledged.
 
-At **22:47:22 UTC on October 11, 2026**, the [direct skills.sh page](https://www.skills.sh/hotsyrup/lumen-house/lumen-house) displayed the actual skill and install command. Installs and First Seen displayed `–`; an anonymous `lumen-house` search returned zero results. Direct-page visibility is verified; search discovery remains **pending/unconfirmed**.
+Listing status checked **October 15, 2026, at 02:12 UTC**: the [direct skills.sh page](https://www.skills.sh/hotsyrup/lumen-house/lumen-house) displayed **Installs: 1** and **First Seen: 4 days ago**. Direct-page visibility is verified. The single install may be our own October 11 installation test; it does **not** establish outside adoption. No installation was performed for this check.
+
+The earlier October 11, 2026, 22:47:22 UTC observation showed `–` for Installs and First Seen and zero results in an anonymous search. That is historical evidence, not the current listing status. Search-based discovery was not rechecked for this correction and remains unconfirmed.
 
 ## License
 
