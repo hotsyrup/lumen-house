@@ -131,8 +131,10 @@ def native_business_fence(connection):
     return digest(tables)
 
 
-def make_checkpoint(connection, schema_fingerprint):
-    document = {'format': FORMAT, 'schemaVersion': 12, 'schemaFingerprint': schema_fingerprint,
+def make_checkpoint(connection, schema_fingerprint, *, schema_version=12):
+    if type(schema_version) is not int or schema_version not in (12, 13):
+        raise FenceError('checkpoint_schema_unsupported')
+    document = {'format': FORMAT, 'schemaVersion': schema_version, 'schemaFingerprint': schema_fingerprint,
                 'nativeBusinessFence': native_business_fence(connection), **journal(connection)}
     fences = []
     for tenant_id, body in connection.execute('SELECT t.tenant_id,s.body_json FROM x_exchange_tenants t LEFT JOIN x_exchange_state s USING(tenant_id) ORDER BY t.tenant_id'):

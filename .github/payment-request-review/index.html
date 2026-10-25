@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Lumen House · Payment request review</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./ui.mjs"></script>
+</head>
+<body>
+  <main>
+    <header class="masthead"><a class="brand" href="/">LUMEN HOUSE<span>OWNER DESK</span></a><span class="badge">REQUEST REVIEW</span></header>
+    <section class="intro" aria-labelledby="page-title"><p class="eyebrow">PAYMENT REQUESTS / OWNER REVIEW</p><h1 id="page-title">Work accepted.<br>Payment still needs you.</h1><p class="lede">A prepared request binds the accepted work and holds its principal. You retain the final decision in your wallet.</p></section>
+    <aside class="review-boundary"><span class="boundary-icon" aria-hidden="true">◌</span><div><strong>Synthetic request review · production disabled</strong><p>This page reads a generated test trace. Selecting a step performs no payment operation. No funds, credentials, grants, or live policy are created.</p></div></aside>
+    <p id="load-status" class="load-status" role="status" aria-live="polite">Loading the synthetic review trace…</p>
+    <div id="review" hidden>
+      <section class="ceilings" aria-label="Approved principal ceilings"><div class="ceilings-heading"><span class="eyebrow">PRINCIPAL CEILINGS</span><p>Limits on request preparation.<br>These are not a wallet balance or an automatic award.</p></div><div><strong>0.10 <small>USDC</small></strong><span>maximum per paid job</span></div><div><strong>1.00 <small>USDC</small></strong><span>per Los Angeles policy day</span></div><div><strong>5.00 <small>USDC</small></strong><span>lifetime principal ceiling</span></div></section>
+      <div class="workspace"><nav class="trace-nav" aria-label="Recorded request steps"><div class="nav-heading"><h2>Review trace</h2><span id="step-count"></span></div><div id="steps"></div><p class="nav-note">Recorded snapshots only.<br>No wallet is connected.</p></nav><section class="detail" aria-labelledby="step-title"><div class="detail-heading"><div><p id="step-number" class="eyebrow"></p><h2 id="step-title"></h2></div><span id="stop-indicator" class="status-badge"></span></div><p id="step-description" class="step-description"></p><div id="request-container"></div><section class="exposure" aria-labelledby="exposure-title"><div class="section-heading"><h3 id="exposure-title">Principal exposure</h3><span>Fees excluded</span></div><div id="exposure-meters"></div><p class="exposure-note">Unresolved holds carry into each new policy day. A failed, unknown, or cancelled wallet attempt does not release earned principal.</p></section><details class="raw"><summary>Inspect the synthetic state and result</summary><pre id="raw-state"></pre></details></section></div>
+      <section class="checks" aria-labelledby="checks-title"><div class="section-heading"><h2 id="checks-title">Controls under review</h2><span id="check-count"></span></div><ul id="checks"></ul></section>
+      <section class="readiness" aria-labelledby="readiness-title"><div><p class="eyebrow">BEFORE A REAL PAYMENT</p><h2 id="readiness-title">A request is ready to review.<br>The wallet handoff is not ready.</h2></div><ul id="limitations"></ul></section>
+    </div>
+    <footer><span>LUMEN HOUSE / LOCAL REVIEW ARTIFACT</span><span>No signing, sending, broadcasting, or automatic payment.</span></footer>
+  </main>
+</body>
+</html>
