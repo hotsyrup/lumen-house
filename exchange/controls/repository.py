@@ -5,12 +5,19 @@ accepts only an already provisioned schema12. Migration is an explicit offline
 operation; it creates no tenant, membership, resource, credential or grant.
 """
 import datetime as dt
+import fcntl
 import json
+import os
 import re
+import stat
+import uuid
+
+from .errors import RepositoryError
+from .recovery_fence import initialize_lineage, journal, make_checkpoint, record_removals, reconcile_erased_content, validate_checkpoint_file
 
 SCHEMA_VERSION = 12
 MAX_STATE_BYTES = 1048576
-TABLES = ("x_exchange_tenants", "x_exchange_state", "x_exchange_memberships")
+TABLES = ("x_exchange_tenants", "x_exchange_state", "x_exchange_memberships", "x_exchange_recovery", "x_exchange_erasures")
 SCOPES = frozenset(("exchange:read", "exchange:write", "exchange:admin"))
 DDL = (
     "CREATE TABLE x_exchange_tenants(tenant_id TEXT PRIMARY KEY NOT NULL,owner_id TEXT NOT NULL REFERENCES principals(id),CHECK(length(tenant_id) BETWEEN 1 AND 100),CHECK(length(owner_id) BETWEEN 1 AND 100))",
@@ -24,16 +31,16 @@ DDL = (
     "CREATE TRIGGER x_exchange_membership_scopes_insert BEFORE INSERT ON x_exchange_memberships WHEN EXISTS(SELECT 1 FROM json_each(NEW.scopes_json) WHERE type!='text' OR value NOT IN ('exchange:read','exchange:write','exchange:admin')) OR (SELECT COUNT(*) FROM json_each(NEW.scopes_json))!=(SELECT COUNT(DISTINCT value) FROM json_each(NEW.scopes_json)) OR (NEW.role!='owner' AND EXISTS(SELECT 1 FROM json_each(NEW.scopes_json) WHERE value='exchange:admin')) BEGIN SELECT RAISE(ABORT,'explicit bounded exchange scopes required'); END",
     "CREATE TRIGGER x_exchange_membership_scopes_update BEFORE UPDATE OF scopes_json ON x_exchange_memberships WHEN EXISTS(SELECT 1 FROM json_each(NEW.scopes_json) WHERE type!='text' OR value NOT IN ('exchange:read','exchange:write','exchange:admin')) OR (SELECT COUNT(*) FROM json_each(NEW.scopes_json))!=(SELECT COUNT(DISTINCT value) FROM json_each(NEW.scopes_json)) OR (NEW.role!='owner' AND EXISTS(SELECT 1 FROM json_each(NEW.scopes_json) WHERE value='exchange:admin')) BEGIN SELECT RAISE(ABORT,'explicit bounded exchange scopes required'); END",
     "CREATE TRIGGER x_exchange_state_version BEFORE UPDATE ON x_exchange_state WHEN NEW.tenant_id!=OLD.tenant_id OR NEW.version!=OLD.version+1 BEGIN SELECT RAISE(ABORT,'state requires next exact version'); END",
+    "CREATE TABLE x_exchange_recovery(id INTEGER PRIMARY KEY CHECK(id=1),lineage_id TEXT UNIQUE NOT NULL CHECK(length(lineage_id)=32 AND lineage_id NOT GLOB '*[^0-9a-f]*'),erasure_sequence INTEGER NOT NULL CHECK(typeof(erasure_sequence)='integer' AND erasure_sequence>=0),erasure_head TEXT NOT NULL CHECK(length(erasure_head)=64 AND erasure_head NOT GLOB '*[^0-9a-f]*'))",
+    "CREATE TABLE x_exchange_erasures(sequence INTEGER PRIMARY KEY CHECK(sequence>=1),tenant_id TEXT NOT NULL REFERENCES x_exchange_tenants(tenant_id),record_hash TEXT NOT NULL CHECK(length(record_hash)=64 AND record_hash NOT GLOB '*[^0-9a-f]*'),erased_at INTEGER NOT NULL CHECK(typeof(erased_at)='integer' AND erased_at>=0),previous_hash TEXT NOT NULL CHECK(length(previous_hash)=64 AND previous_hash NOT GLOB '*[^0-9a-f]*'),event_hash TEXT NOT NULL CHECK(length(event_hash)=64 AND event_hash NOT GLOB '*[^0-9a-f]*'),UNIQUE(tenant_id,record_hash))",
+    "CREATE TRIGGER x_exchange_lineage_immutable BEFORE UPDATE OF id,lineage_id ON x_exchange_recovery BEGIN SELECT RAISE(ABORT,'recovery lineage is immutable'); END",
+    "CREATE TRIGGER x_exchange_lineage_retained BEFORE DELETE ON x_exchange_recovery BEGIN SELECT RAISE(ABORT,'recovery lineage is retained'); END",
+    "CREATE TRIGGER x_exchange_erasure_immutable BEFORE UPDATE ON x_exchange_erasures BEGIN SELECT RAISE(ABORT,'erasure receipts are immutable'); END",
+    "CREATE TRIGGER x_exchange_erasure_retained BEFORE DELETE ON x_exchange_erasures BEGIN SELECT RAISE(ABORT,'erasure receipts require backup reconciliation'); END",
 )
 # Independently pinned from a synthetic schema11 fixture plus the reviewed DDL.
 # This is never learned from the store being opened.
-SCHEMA12_SHA256 = "df34dfcc92de5df039c5d76bcf91b8c1373da9ff0dcb5f97d038d094f3c055d9"
-
-
-class RepositoryError(Exception):
-    def __init__(self, code, status=503):
-        super().__init__(code)
-        self.code, self.status = code, status
+SCHEMA12_SHA256 = "54ac20a7afe285c09b3a426884d482d51aa555fd8a12f3ff7137f924866b1e44"
 
 
 def _identifier(value):
@@ -91,9 +98,23 @@ class ExchangeTables:
 
     def save_state(self, tenant_id, state, expected_version):
         db = self._db()
+        savepoint = 'exchange_state_' + uuid.uuid4().hex
+        db.execute('SAVEPOINT ' + savepoint)
+        try:
+            result = self._save_state(tenant_id, state, expected_version)
+        except BaseException:
+            db.execute('ROLLBACK TO ' + savepoint)
+            db.execute('RELEASE ' + savepoint)
+            raise
+        db.execute('RELEASE ' + savepoint)
+        return result
+
+    def _save_state(self, tenant_id, state, expected_version):
+        db = self._db()
         _identifier(tenant_id)
         if type(expected_version) is not int or not 0 <= expected_version < 2147483647:
             raise RepositoryError("invalid_state_version", 409)
+        before, _ = self.load_state(tenant_id)
         body = _serialize(state)
         if expected_version == 0:
             cursor = db.execute("INSERT INTO x_exchange_state(tenant_id,body_json,version) VALUES(?,?,1) ON CONFLICT(tenant_id) DO NOTHING", (tenant_id, body))
@@ -101,6 +122,7 @@ class ExchangeTables:
             cursor = db.execute("UPDATE x_exchange_state SET body_json=?,version=version+1 WHERE tenant_id=? AND version=?", (body, tenant_id, expected_version))
         if cursor.rowcount != 1:
             raise RepositoryError("exchange_state_conflict", 409)
+        record_removals(db, tenant_id, before, state)
         return expected_version + 1
 
 
@@ -121,6 +143,7 @@ def _fingerprints(native):
 def _metadata(connection):
     native, base = _native()
     result = base._metadata(connection, SCHEMA_VERSION, _fingerprints(native), native.FulfillmentRepository._count_tables + TABLES)
+    journal(connection)
     # json_each constraints are enforced by triggers as well as application
     # validation. Check existing rows during recovery/open, including files
     # modified by an external writer that disabled triggers or checks.
@@ -184,6 +207,7 @@ def native_repository_class():
                     raise RepositoryError("explicit_exchange_migration_required")
                 for statement in DDL:
                     self.connection.execute(statement)
+                initialize_lineage(self.connection)
                 stamp = dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
                 self.connection.execute("INSERT INTO schema_migrations VALUES(12,?,?)", (stamp, "Additive non-cash exchange controls; no memberships or resources provisioned"))
                 self.connection.execute("PRAGMA user_version=12")
@@ -206,7 +230,7 @@ def backup_store(source, destination):
     return base._backup_store(source, destination, _metadata)
 
 
-def restore_store(backup, destination):
+def restore_store(backup, destination, *, authority_store=None, checkpoint_path=None, checkpoint_pin=None):
     """Restore a new isolated STOP-held file; never overwrite the active file.
 
     Reuse native checksum/schema/integrity/recovery machinery. Every credential
@@ -216,11 +240,27 @@ def restore_store(backup, destination):
     stale assents, owner approvals and replay responses cannot revive authority.
     Recovery/reprovisioning requires a separate owner approval.
     """
-    _, base = _native()
-    provider_count = [0]
+    native, base = _native()
+    hook = getattr(native, 'apply_restore_holds', None)
+    if not callable(hook):
+        raise RepositoryError('complete_native_recovery_hook_required')
+    if authority_store is None or checkpoint_path is None or checkpoint_pin is None:
+        raise RepositoryError('current_erasure_authority_required')
+    authority = base._regular_path(authority_store)
+    source_backup = base._regular_path(backup)
+    if authority.samefile(source_backup):
+        raise RepositoryError('backup_cannot_supply_current_erasure_authority')
+    lease = os.open(str(authority) + '.lock', os.O_RDWR | os.O_NOFOLLOW)
+    authority_connection = None
+    native_result = {}
+    reconciled = [0]
 
     def hold(connection):
         from .core import recover_state
+        reconciled[0] = reconcile_erased_content(connection, current_document)
+        # Full native protections are reused, including policy/execution/standing
+        # revocations and restore_snapshot control gaps. No reduced fallback.
+        native_result.update(hook(connection))
         stamp = dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
         now = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
         for tenant_id, body, version in connection.execute("SELECT tenant_id,body_json,version FROM x_exchange_state").fetchall():
@@ -230,15 +270,28 @@ def restore_store(backup, destination):
             cursor = connection.execute("UPDATE x_exchange_state SET body_json=?,version=version+1 WHERE tenant_id=? AND version=?", (_serialize(recovered), tenant_id, version))
             if cursor.rowcount != 1:
                 raise RepositoryError("exchange_restore_state_conflict")
-        provider_count[0] = connection.execute("SELECT COUNT(*) FROM r_credentials").fetchone()[0]
-        connection.execute("UPDATE r_credentials SET revoked_at=COALESCE(revoked_at,?)", (stamp,))
-        controls = connection.execute("SELECT revision FROM wf_controls WHERE id=1").fetchone()
-        if controls is None or type(controls[0]) is not int or not 0 <= controls[0] < 2**63 - 1:
-            raise RepositoryError("invalid_native_restore_control")
-        connection.execute("UPDATE wf_controls SET stopped=1,revision=revision+1 WHERE id=1")
-        connection.execute("UPDATE wf_authorities SET revoked_at=? WHERE revoked_at IS NULL", (stamp,))
         connection.execute("UPDATE x_exchange_memberships SET active=0")
-        connection.execute("INSERT INTO security_events(principal_id,action,created_at,detail_json) VALUES(NULL,'exchange_restore_held',?,?)", (stamp, json.dumps({"exchange_memberships_revoked": True, "provider_credentials_revoked": provider_count[0], "native_financial_stop_latched": True}, separators=(",", ":"))))
+        connection.execute("INSERT INTO security_events(principal_id,action,created_at,detail_json) VALUES(NULL,'exchange_restore_held',?,?)", (stamp, json.dumps({"exchange_memberships_revoked": True, "erased_records_reconciled": reconciled[0], "native_financial_stop_latched": True}, separators=(",", ":"))))
 
-    result = base._restore_store(backup, destination, accepted_versions=(SCHEMA_VERSION,), source_metadata=_metadata, output_metadata=_metadata, upgrade=hold)
-    return dict(result, provider_credentials_revoked=provider_count[0], exchange_memberships_revoked=True, exchange_stop_latched=True, financial_stop_latched=True, financial_execution_enabled=False)
+    try:
+        if not stat.S_ISREG(os.fstat(lease).st_mode):
+            raise RepositoryError('current_authority_lock_invalid')
+        try:
+            fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RepositoryError('current_authority_must_be_quiesced') from None
+        authority_connection = base._readonly(authority)
+        authority_connection.execute('BEGIN')
+        _metadata(authority_connection)
+        current_document, current_bytes = make_checkpoint(authority_connection, SCHEMA12_SHA256)
+        validate_checkpoint_file(checkpoint_path, checkpoint_pin, current_document, current_bytes)
+        result = base._restore_store(backup, destination, accepted_versions=(SCHEMA_VERSION,), source_metadata=_metadata, output_metadata=_metadata, upgrade=hold)
+        legacy_count = result['credentials_revoked']
+        result.update(native_result)
+        return dict(result, credentials_revoked=legacy_count + native_result['provider_credentials_revoked'],
+                    legacy_credentials_revoked=legacy_count, exchange_memberships_revoked=True, exchange_stop_latched=True,
+                    erased_records_reconciled=reconciled[0], erasure_authority_verified=True)
+    finally:
+        if authority_connection is not None:
+            authority_connection.close()
+        os.close(lease)

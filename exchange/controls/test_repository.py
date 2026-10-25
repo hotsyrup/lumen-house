@@ -16,6 +16,8 @@ import threading
 import unittest
 
 from .repository import DDL, ExchangeTables, MAX_STATE_BYTES, RepositoryError, TABLES
+from .recovery_fence import initialize_lineage
+from .maintenance import export_checkpoint
 
 
 def recovery_fixture():
@@ -62,6 +64,7 @@ class Fixture:
         self.connection.execute("INSERT INTO principals VALUES('fixture-owner','owner',1)")
         for statement in DDL:
             self.connection.execute(statement)
+        initialize_lineage(self.connection)
         self.connection.execute("PRAGMA user_version=12")
         self.connection.execute("INSERT INTO x_exchange_tenants VALUES('fixture-tenant','fixture-owner')")
         self.lock = threading.RLock()
@@ -202,7 +205,7 @@ class NativeRepositoryTests(unittest.TestCase):
         before = self.native_rows()
         repository = self.Native(self.path, migrate=True)
         with repository.lock, repository.transaction():
-            self.assertEqual([repository.connection.execute("SELECT COUNT(*) FROM " + table).fetchone()[0] for table in TABLES], [0, 0, 0])
+            self.assertEqual([repository.connection.execute("SELECT COUNT(*) FROM " + table).fetchone()[0] for table in TABLES], [0, 0, 0, 1, 0])
             self.assertEqual(repository.connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 12)
         repository.close()
         self.assertEqual(self.native_rows(), before)
@@ -247,11 +250,15 @@ class NativeRepositoryTests(unittest.TestCase):
             tables.save_state("fixture-tenant", state, 0)
             db.execute("INSERT INTO credentials(id,principal_id,token_hash,created_at,expires_at) VALUES('fixture-credential','fixture-owner',?,'2026-01-01T00:00:00Z','2099-01-01T00:00:00Z')", ("a" * 64,))
             db.execute("INSERT INTO r_credentials(id,principal_id,token_hash,created_at,expires_at) VALUES('fixture-provider-credential','fixture-provider',?,'2026-01-01T00:00:00Z','2099-01-01T00:00:00Z')", ("b" * 64,))
+        directory = Path(self.folder.name) / 'checkpoints'
+        directory.mkdir(mode=0o700)
+        checkpoint = export_checkpoint(repository, directory)
+        options = {'authority_store': self.path, 'checkpoint_path': directory / checkpoint['checkpointFile'], 'checkpoint_pin': checkpoint['pin']}
         repository.close()
         backup = Path(self.folder.name) / "backup.sqlite3"
         self.adapter.backup_store(self.path, backup)
         restored = Path(self.folder.name) / "restored.sqlite3"
-        result = self.adapter.restore_store(backup, restored)
+        result = self.adapter.restore_store(backup, restored, **options)
         self.assertTrue(result["financial_stop_latched"])
         self.assertTrue(result["exchange_stop_latched"])
         recovered = self.Native(restored)
@@ -275,11 +282,15 @@ class NativeRepositoryTests(unittest.TestCase):
                 self.assertIsNotNone(recovered.connection.execute("SELECT revoked_at FROM " + name).fetchone()[0])
         recovered.close()
         with self.assertRaises(Exception):
-            self.adapter.restore_store(backup, restored)
+            self.adapter.restore_store(backup, restored, **options)
         self.adapter.check_store(self.path)
 
     def test_corrupt_backup_manifest_cannot_publish_a_restored_file(self):
         repository = self.Native(self.path, migrate=True)
+        directory = Path(self.folder.name) / 'checkpoints'
+        directory.mkdir(mode=0o700)
+        checkpoint = export_checkpoint(repository, directory)
+        options = {'authority_store': self.path, 'checkpoint_path': directory / checkpoint['checkpointFile'], 'checkpoint_pin': checkpoint['pin']}
         repository.close()
         backup = Path(self.folder.name) / "backup.sqlite3"
         self.adapter.backup_store(self.path, backup)
@@ -289,7 +300,7 @@ class NativeRepositoryTests(unittest.TestCase):
         manifest.write_text(json.dumps(content))
         destination = Path(self.folder.name) / "never-created.sqlite3"
         with self.assertRaises(Exception):
-            self.adapter.restore_store(backup, destination)
+            self.adapter.restore_store(backup, destination, **options)
         self.assertFalse(destination.exists())
 
 

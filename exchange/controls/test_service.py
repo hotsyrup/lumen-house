@@ -9,6 +9,7 @@ import unittest
 
 from .core import ControlError
 from .repository import DDL
+from .recovery_fence import initialize_lineage
 from .service import ExchangeService, PREFIX
 
 NOW = 1800000000000
@@ -29,6 +30,7 @@ class FixtureRepository:
         self.connection.execute("INSERT INTO principals VALUES('owner','owner',1),('other-owner','owner',1)")
         for statement in DDL:
             self.connection.execute(statement)
+        initialize_lineage(self.connection)
         self.connection.execute('PRAGMA user_version=12')
         self.lock = threading.RLock()
         self.depth = 0

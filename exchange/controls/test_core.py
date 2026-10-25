@@ -502,5 +502,239 @@ class ControlsTests(unittest.TestCase):
         self.assertEqual((p["version"], len(p["events"])), (version, events))
 
 
+class FullSizeSafetyTests(unittest.TestCase):
+    """Exercise reachable admission/compaction limits without patching constants.
+
+    All fixture growth goes through real commands. Repeated owner safety calls
+    are adversarial new intents, using independent keys, not synthetic rows
+    inserted into the state. Trusted recovery is exercised repeatedly because
+    it must remain safe even when restored histories already fill the audit.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        if (core.NORMAL_STATE_BYTES, core.MAX_EVENTS, core.SAFETY_STATE_BYTES) != (650 * 1024, 100, 950 * 1024):
+            raise AssertionError("Full-size tests require the actual production constants")
+        h = Harness(False)
+        h.command("configure", OWNER, value=config(capacity=1000, max_units=1000))
+        h.command("open", OWNER)
+        completed = h.delivered()
+        cls.delivery_operation = {"kind": "command", "principal": agent("provider"),
+                                  "key": f"key-{h.seq}",
+                                  "command": {"action": "deliver", "id": completed["id"],
+                                              "expectedVersion": completed["version"] - 1,
+                                              "input": {"evidence": {"sha256": "a" * 64,
+                                                                      "description": "Synthetic delivery digest"}}}}
+        h.command("accept", OWNER, completed,
+                  {"deliveryRevision": 1, "deliveryHash": completed["evidence"]["deliveryHash"],
+                   "assessment": "Synthetic owner recomputed every fixture hash"})
+        cls.ids = {"completed": completed["id"]}
+        cls.ids["cancel"] = h.agreed(2)["id"]
+        for name, units in (("dispute", 3), ("revoke", 4), ("resolve", 5)):
+            p = h.agreed(units)
+            p = h.command("deliver", agent("provider"), p,
+                          {"evidence": {"sha256": str(units) * 64,
+                                        "description": "Synthetic evidence " + name}})
+            if name == "resolve":
+                p = h.command("dispute", agent(), p, {"reason": "Owner must resolve synthetic mismatch"})
+            cls.ids[name] = p["id"]
+        p = h.propose()
+        cls.ids["history"] = p["id"]
+        large_terms = terms()
+        for field in ("description", "deliverable", "acceptance", "cancellation"):
+            large_terms[field] = "\U0001f9ea" * 1000
+        for index in range(core.MAX_EVENTS):
+            before = core.canonical_json(h.state)
+            try:
+                p = h.command("revise", agent(), p, {"terms": large_terms})
+            except core.ControlError as error:
+                if error.code != "state_capacity_reached" or core.canonical_json(h.state) != before:
+                    raise AssertionError("Expected immutable byte-admission rejection") from error
+                break
+        else:
+            raise AssertionError("Large legitimate histories did not reach byte admission")
+        # A small, authorized owner operation fills the remaining gap without
+        # altering resource commitments or requiring a fake state edit.
+        for _ in range(core.MAX_REQUESTS):
+            before = core.canonical_json(h.state)
+            try:
+                h.command("open", OWNER)
+            except core.ControlError as error:
+                if error.code != "state_capacity_reached" or core.canonical_json(h.state) != before:
+                    raise AssertionError("Ordinary admission did not roll back exactly") from error
+                break
+        else:
+            raise AssertionError("Ordinary commands did not fill the real byte cap")
+        size = len(core.canonical_json(h.state).encode("utf-8"))
+        if not core.NORMAL_STATE_BYTES * 0.99 <= size <= core.NORMAL_STATE_BYTES:
+            raise AssertionError("Fixture must occupy at least 99% of actual normal admission")
+        cls.base_state, cls.base_seq = deepcopy(h.state), h.seq
+        print("FULL_SIZE_BOUNDARY " + core.canonical_json({
+            "bytes": size, "normalBytes": core.NORMAL_STATE_BYTES,
+            "safetyBytes": core.SAFETY_STATE_BYTES, "maxEvents": core.MAX_EVENTS,
+            "records": len(h.state["records"]), "requests": len(h.state["requests"]),
+            "reserved": h.state["resources"]["synthetic-review"]["reserved"],
+            "used": h.state["resources"]["synthetic-review"]["used"]}), flush=True)
+
+    def fixture(self):
+        h = Harness(False)
+        h.state, h.seq = deepcopy(self.base_state), self.base_seq
+        return h
+
+    def assert_error(self, status, code, run):
+        with self.assertRaises(core.ControlError) as caught:
+            run()
+        self.assertEqual((caught.exception.status, caught.exception.code), (status, code))
+
+    def assert_bounded(self, state):
+        size = len(core.canonical_json(state).encode("utf-8"))
+        self.assertLessEqual(size, core.SAFETY_STATE_BYTES)
+        self.assertLessEqual(len(state["requests"]), core.MAX_REQUESTS)
+        self.assertLessEqual(len(state["administrativeAudit"]), 256)
+        self.assertTrue(all(len(p["events"]) <= core.MAX_EVENTS for p in state["records"].values()))
+        core._validate_state(state)
+        return size
+
+    def test_real_byte_boundary_all_safety_actions_keep_exact_accounting(self):
+        results = {}
+        for action in ("cancel", "dispute", "resolve", "revoke", "stop", "recover"):
+            with self.subTest(action=action):
+                h = self.fixture()
+                before = deepcopy(h.state)
+                before_bytes = core.canonical_json(h.state)
+                original_reserved = h.state["resources"]["synthetic-review"]["reserved"]
+                original_used = h.state["resources"]["synthetic-review"]["used"]
+                # A failed ordinary operation cannot leak a partial record,
+                # audit event, retry row or revised resource counter.
+                self.assert_error(409, "state_capacity_reached", lambda: h.command("open", OWNER))
+                self.assertEqual(core.canonical_json(h.state), before_bytes)
+                if action in ("cancel", "dispute", "resolve"):
+                    p = h.get({"id": self.ids[action]})
+                    value = {"reason": "\U0001f9ea" * 300}
+                    if action == "resolve":
+                        value["outcome"] = "cancel"
+                    h.command(action, OWNER if action == "resolve" else agent(), p, value)
+                    expected_reserved = original_reserved - {"cancel": 2, "dispute": 0, "resolve": 5}[action]
+                elif action == "revoke":
+                    h.command("revoke", OWNER, value={"subjectId": "provider", "reason": "\U0001f9ea" * 300})
+                    expected_reserved = original_reserved - 2
+                    self.assertTrue(h.state["grants"]["provider"]["revoked"])
+                    self.assert_error(403, "grant_required", lambda: h.get({"id": self.ids["revoke"]}, agent("provider")))
+                elif action == "stop":
+                    h.command("stop", OWNER, value={"reason": "\U0001f9ea" * 300})
+                    expected_reserved = original_reserved - 2
+                    self.assertTrue(h.state["stopped"])
+                    self.assert_error(503, "exchange_stopped", lambda: h.get({"id": self.ids["dispute"]}, agent()))
+                else:
+                    recovered = core.recover_state(h.state, now=h.now)
+                    self.assertEqual(h.state, before)
+                    h.state = recovered
+                    expected_reserved = original_reserved
+                    self.assertTrue(h.state["stopped"])
+                    self.assertTrue(all(r["result"] is None for r in h.state["requests"]))
+                self.assertEqual(h.state["resources"]["synthetic-review"]["reserved"], expected_reserved)
+                self.assertEqual(h.state["resources"]["synthetic-review"]["used"], original_used)
+                for sid in ("requester", "provider"):
+                    self.assertEqual(h.state["grants"][sid]["reserved"], expected_reserved)
+                    self.assertEqual(h.state["grants"][sid]["used"], original_used)
+                for name in ("dispute", "revoke", "resolve"):
+                    if name == action and action == "resolve":
+                        continue
+                    p = h.state["records"][self.ids[name]]
+                    self.assertEqual(p["evidence"], before["records"][p["id"]]["evidence"])
+                    self.assertEqual(p["reservedUnits"], before["records"][p["id"]]["reservedUnits"])
+                results[action] = self.assert_bounded(h.state)
+        print("FULL_SIZE_SAFETY_ACTIONS " + core.canonical_json(results), flush=True)
+
+    def test_real_safety_compaction_tombstones_reauthorize_and_repeats_stay_bounded(self):
+        h = self.fixture()
+        first_request = deepcopy(h.state["requests"][0])
+        self.assertIsNotNone(first_request["result"])
+        peak = len(core.canonical_json(h.state).encode("utf-8"))
+        compaction_at = None
+        original_resources = deepcopy(h.state["resources"])
+        original_debts = {pid: p["reservedUnits"] for pid, p in h.state["records"].items()}
+        for index in range(768):
+            h.command("revoke", OWNER, value={"subjectId": "outsider", "reason": "\U0001f9ea" * 300})
+            size = self.assert_bounded(h.state)
+            peak = max(peak, size)
+            row = next(r for r in h.state["requests"] if r["keyHash"] == first_request["keyHash"])
+            if row["result"] is None and compaction_at is None:
+                compaction_at = index + 1
+                self.assertTrue(all(r["result"] is None for r in h.state["requests"]))
+                self.assertLess(size, core.NORMAL_STATE_BYTES)
+        self.assertIsNotNone(compaction_at, "Actual950KiB safety compaction must execute")
+        self.assertLessEqual(compaction_at, 256)
+        self.assertEqual(len(h.state["administrativeAudit"]), 256)
+        self.assertEqual(h.state["resources"], original_resources)
+        self.assertEqual({pid: p["reservedUnits"] for pid, p in h.state["records"].items()}, original_debts)
+        # The original configure retry is now an opaque tombstone. Exact old
+        # content is unavailable, while fresh authorization runs before replay.
+        operation = {"kind": "command", "principal": OWNER, "key": "key-1",
+                     "command": {"action": "configure", "input": config(capacity=1000, max_units=1000)}}
+        before_bytes = core.canonical_json(h.state)
+        self.assert_error(410, "record_erased", lambda: h.operation(operation))
+        self.assertEqual(core.canonical_json(h.state), before_bytes)
+        operation["principal"] = {**OWNER, "tenantId": "tenant-b"}
+        self.assert_error(403, "tenant_mismatch", lambda: h.operation(operation))
+        operation["principal"] = {**OWNER, "scopes": []}
+        self.assert_error(403, "scope_required", lambda: h.operation(operation))
+        # A current participant can still read its held delivery; unrelated or
+        # revoked actors cannot obtain evidence from either records or retries.
+        self.assertIsNotNone(h.get({"id": self.ids["dispute"]}, agent("provider"))["evidence"])
+        self.assert_error(403, "grant_required", lambda: h.get({"id": self.ids["dispute"]}, agent("outsider")))
+        self.assert_error(410, "record_erased", lambda: h.operation(deepcopy(self.delivery_operation)))
+        h.command("revoke", OWNER, value={"subjectId": "provider", "reason": "Revoke access before a cached delivery retry"})
+        self.assert_error(403, "grant_required", lambda: h.operation(deepcopy(self.delivery_operation)))
+        self.assertEqual(h.state["resources"]["synthetic-review"]["used"], 1)
+        self.assertEqual(h.state["resources"]["synthetic-review"]["reserved"], 12)
+        print("FULL_SIZE_COMPACTION " + core.canonical_json({
+            "compactionAt": compaction_at, "repeatedSafetyCommands": 768,
+            "peakCommittedBytes": peak, "finalBytes": self.assert_bounded(h.state),
+            "tombstones": sum(r["result"] is None for r in h.state["requests"]),
+            "auditEntries": len(h.state["administrativeAudit"])}), flush=True)
+
+    def test_actual_full_audit_recovery_and_resolution_keep_obligations(self):
+        h = self.fixture()
+        original_resources = deepcopy(h.state["resources"])
+        evidence = {pid: deepcopy(p["evidence"]) for pid, p in h.state["records"].items()}
+        target_id = self.ids["resolve"]
+        for index in range(core.MAX_EVENTS + 25):
+            before = deepcopy(h.state)
+            before_bytes = core.canonical_json(before)
+            h.state = core.recover_state(before, now=h.now + index)
+            # Recovery returns a detached copy; even full audit compaction must
+            # not mutate the supplied restored snapshot.
+            self.assertEqual(core.canonical_json(before), before_bytes)
+            self.assertEqual(h.state["resources"], original_resources)
+            self.assertTrue(all(r["result"] is None for r in h.state["requests"]))
+            self.assert_bounded(h.state)
+        target = h.state["records"][target_id]
+        self.assertEqual(len(target["events"]), core.MAX_EVENTS)
+        self.assertGreater(target["auditDropped"], 0)
+        self.assertEqual(target["events"][-1]["sequence"], target["auditDropped"] + core.MAX_EVENTS)
+        for pid, original in evidence.items():
+            self.assertEqual(h.state["records"][pid]["evidence"], original)
+        before_version, before_dropped = target["version"], target["auditDropped"]
+        # No further assent/delivery/automatic completion can bypass recovery.
+        self.assert_error(503, "exchange_stopped", lambda: h.command("deliver", agent("provider"), target,
+                          {"evidence": {"sha256": "a" * 64, "description": "Late delivery"}}))
+        before_bytes = core.canonical_json(h.state)
+        self.assert_error(409, "version_changed", lambda: h.command("resolve", OWNER, {**target, "version": before_version - 1},
+                          {"outcome": "cancel", "reason": "Stale snapshot cannot resolve held debt"}))
+        self.assertEqual(core.canonical_json(h.state), before_bytes)
+        target = h.command("resolve", OWNER, target, {"outcome": "cancel", "reason": "\U0001f9ea" * 300})
+        self.assertEqual(target["status"], "cancelled")
+        self.assertEqual(len(target["events"]), core.MAX_EVENTS)
+        self.assertEqual(target["auditDropped"], before_dropped + 1)
+        self.assertEqual(h.state["resources"]["synthetic-review"]["reserved"], original_resources["synthetic-review"]["reserved"] - 5)
+        self.assertEqual(h.state["resources"]["synthetic-review"]["used"], original_resources["synthetic-review"]["used"])
+        print("FULL_SIZE_AUDIT_RECOVERY " + core.canonical_json({
+            "recoveries": core.MAX_EVENTS + 25, "events": len(target["events"]),
+            "auditDropped": target["auditDropped"], "finalBytes": self.assert_bounded(h.state),
+            "reserved": h.state["resources"]["synthetic-review"]["reserved"],
+            "used": h.state["resources"]["synthetic-review"]["used"]}), flush=True)
+
+
 if __name__ == "__main__":
     unittest.main()
