@@ -2,7 +2,7 @@
 
 ## Status and source reconciliation
 
-This is an **isolated, local-only prototype**, not a launched exchange or an integration into the deployed House application. It is additive: existing root pages, discovery skill, services, data, access, budgets, schedules and payment paths must remain unchanged.
+This is an **isolated, local-only prototype**, not a launched exchange or an integration into the deployed House application. It is additive: existing root pages, discovery skill, services, data, access, budgets, schedules and payment paths must remain unchanged. Local review HTML/JS/CSS live under `.github/exchange-review/`, excluded by the observed raw Pages uploader; only the local server loads them.
 
 The public repository baseline is `9c87ced2213cdbf306c70a3100c83d354bc41a21`, an older static landing site. The authoritative Mac sources and retained release artifacts have now been inspected. They include a composed public runtime and a separate authenticated record service. Existing checkout changes and all newer private source remain local; they are not included in this PR. See [reconciliation](RECONCILIATION.md) for the public-safe conclusions and exact scope.
 
@@ -70,7 +70,7 @@ Export and deletion must be explicit owner-controlled operations. Export should 
 
 ## Local review
 
-From the repository root, with Node.js 24 (tested on 24.19.0; built-in `node:sqlite` may print an experimental warning):
+From the repository root, with Node.js 24 (tested on 24.20.0; built-in `node:sqlite` may print an experimental warning):
 
 ```sh
 node exchange/server.mjs
@@ -94,8 +94,8 @@ No production readiness, paid fulfillment, adoption, available human capacity or
 
 ## Verified at this milestone
 
-- Node built-in test runner: 56 tests pass, including portable lifecycle/schema guards, legacy SQLite replay, adapter passthrough, body/origin guards, explicit offline export and expiry.
+- Node built-in test runner: 63 tests pass, including portable lifecycle/schema guards, legacy SQLite replay, adapter passthrough, body/origin guards, explicit offline export and expiry.
 - JavaScript syntax checks pass. Existing tracked House files are unchanged.
 - Mac in-app browser QA passed at desktop and mobile sizes: proposal, counteroffer, agreement, delivery, acceptance, completion, separate provenance/evaluation, local draft download and return to the preserved House catalog. Native prompt dialogs failed in this browser; the prototype now uses accessible in-page dialogs. This is synthetic local QA, not production identity or fulfillment proof.
 - Default-off composition matched 252 local responses against the frozen newer House runtime and its 114-file asset set. No external request occurred. This is retained-artifact parity, not fresh provider verification.
-- No production record integration, real authentication, production migration, payout, live fulfillment or deployment has been tested or enabled.
+- No production record integration, real authentication, production migration, payout, live fulfillment or deployment has been tested or enabled. A separate `production-adapter.mjs` provides exact existing-House delegation without importing review handlers, UI, storage or activation flags; packaging it is not activation.

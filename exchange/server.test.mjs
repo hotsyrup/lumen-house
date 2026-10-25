@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createExchangeServer } from './server.mjs';
 import { openStore } from './store.mjs';
 import { matchCapabilities } from './capabilities.mjs';
+import { readFileSync } from 'node:fs';
 async function setup(t, options) {const store=openStore();const server=createExchangeServer(store,options);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(async()=>{await new Promise(resolve=>server.close(resolve));store.close();});return `http://127.0.0.1:${server.address().port}`;}
 
 test('standalone review does not label its own root as the House catalog', async t => {
@@ -54,6 +55,18 @@ test('local API serves demo policy and UI with defensive headers',async t=>{
  r=await fetch(origin+'/api/policy');assert.equal((await r.json()).realEnabled,false);
  for(const path of ['/ui.mjs','/style.css','/api/capabilities','/api/proposals'])assert.equal((await fetch(origin+path)).status,200);
  assert.equal((await fetch(origin+'/../store.mjs')).status,404);
+});
+
+test('relocated review assets keep runtime names and are served only through the local mount', async t => {
+ const origin=await setup(t);
+ for(const name of ['ui.mjs','style.css']) {
+  const response=await fetch(origin+'/exchange/'+name);
+  assert.equal(response.status,200);
+  assert.equal(await response.text(),readFileSync(new URL('../.github/exchange-review/'+name,import.meta.url),'utf8'));
+ }
+ for(const name of ['index.html','ui.mjs','style.css']) {
+  assert.equal((await fetch(origin+'/.github/exchange-review/'+name)).status,404);
+ }
 });
 test('cross origin, DNS rebinding and absent-origin mutations are denied',async t=>{
  const origin=await setup(t);

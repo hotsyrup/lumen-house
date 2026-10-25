@@ -1,4 +1,5 @@
 import { capabilities, matchCapabilities } from './capabilities.mjs';
+import { withDisabledHouseExchange } from './production-adapter.mjs';
 import { createHouseIntakeDraft } from './house-intake-draft.mjs';
 
 const MAX_BODY_BYTES = 16000;
@@ -175,7 +176,7 @@ async function reviewFetch(request, review) {
 export function withHouseExchange(house, { review } = {}) {
   if (!house || typeof house.fetch !== 'function') throw new TypeError('House fetch implementation required');
   if (review == null) {
-    return { fetch(request, env, ctx) { return house.fetch(request, env, ctx); } };
+    return withDisabledHouseExchange(house);
   }
   const local = validateReview(review);
   return {

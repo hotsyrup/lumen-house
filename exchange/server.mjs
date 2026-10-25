@@ -8,9 +8,11 @@ import { withHouseExchange } from './house-adapter.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const assetNames = ['index.html', 'ui.mjs', 'style.css'];
+// The raw Pages uploader excludes .github; only this local server loads review UI.
+const reviewDirectory = join(directory, '..', '.github', 'exchange-review');
 
 export function createExchangeServer(store, {house} = {}) {
-  const assets = Object.fromEntries(assetNames.map(name => [name, readFileSync(join(directory, name), 'utf8')]));
+  const assets = Object.fromEntries(assetNames.map(name => [name, readFileSync(join(reviewDirectory, name), 'utf8')]));
   if (!house) {
     assets['index.html'] = assets['index.html'].replace(
       '<a data-house-catalog href="/">← House catalog</a>',
