@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import { openStore, POLICY } from './store.mjs';
 
 function input(overrides = {}) {
@@ -184,3 +185,40 @@ test('retention purge removes expired data and frees reservations', t => {
   assert.equal(store.export(p.id).proposal.reservedUnits,0);
   assert.throws(()=>send('toString',p.id,'owner',{}),error(409,/transition/));
  });
+
+
+test('legacy SHA-256 replay rows survive the portable-core upgrade', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'house-exchange-legacy-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const path = join(dir, 'test.sqlite');
+  const command = {action: 'propose', actor: 'requester', input: input()};
+  let store = openStore(path);
+  const proposal = store.execute(command, 'legacy-key');
+  store.close();
+  const db = new DatabaseSync(path);
+  db.prepare('UPDATE requests SET fingerprint=? WHERE key=?').run(createHash('sha256').update(JSON.stringify(command)).digest('hex'), 'legacy-key');
+  db.exec('PRAGMA user_version=0');
+  db.close();
+  store = openStore(path);
+  try {
+    assert.deepEqual(store.execute(command, 'legacy-key'), proposal);
+    assert.equal(store.export(proposal.id).events.length, 1);
+    assert.throws(() => store.execute({...command, input: input({agent: 'Changed intent'})}, 'legacy-key'), error(409, /Idempotency/));
+  } finally {store.close();}
+});
+
+test('unknown SQLite schema version is rejected before changing its data', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'house-exchange-version-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const path = join(dir, 'test.sqlite');
+  let db = new DatabaseSync(path);
+  db.exec('CREATE TABLE preserved(value TEXT); INSERT INTO preserved VALUES(\'synthetic preserved data\'); PRAGMA user_version=2;');
+  db.close();
+  assert.throws(() => openStore(path), error(503, /schema/));
+  db = new DatabaseSync(path);
+  try {
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 2);
+    assert.equal(db.prepare('SELECT value FROM preserved').get().value, 'synthetic preserved data');
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='proposals'").get().n, 0);
+  } finally {db.close();}
+});

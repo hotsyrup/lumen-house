@@ -2,47 +2,68 @@ import { createServer } from 'node:http';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { openStore, ExchangeError } from './store.mjs';
-import { capabilities, matchCapabilities } from './capabilities.mjs';
+import { Readable } from 'node:stream';
+import { openStore } from './store.mjs';
+import { withHouseExchange } from './house-adapter.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
-export function createExchangeServer(store) {
-  return createServer(async (req,res)=>{
+const assetNames = ['index.html', 'ui.mjs', 'style.css'];
+
+export function createExchangeServer(store, {house} = {}) {
+  const assets = Object.fromEntries(assetNames.map(name => [name, readFileSync(join(directory, name), 'utf8')]));
+  return createServer(async (req, res) => {
     const origin = `http://127.0.0.1:${res.socket.localPort}`;
-    const send = (status,data,type='application/json') => {res.writeHead(status,{'Content-Type':type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",'Referrer-Policy':'no-referrer'});res.end(type==='application/json'?JSON.stringify(data):data);};
     try {
-      if(req.headers.host !== new URL(origin).host) throw new ExchangeError('Loopback Host required',403);
-      if(req.headers.origin && req.headers.origin !== origin) throw new ExchangeError('Cross-origin requests disabled',403);
-      const url = new URL(req.url,origin);
-      if(req.method==='GET' && ['/','/index.html','/ui.mjs','/style.css'].includes(url.pathname)) {
-        const name = url.pathname==='/'?'index.html':url.pathname.slice(1);
-        return send(200,readFileSync(join(directory,name)),name.endsWith('.html')?'text/html; charset=utf-8':name.endsWith('.css')?'text/css':'text/javascript');
+      if (req.headers.host !== new URL(origin).host) {
+        res.writeHead(403, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
+        return res.end(JSON.stringify({error: 'Loopback Host required'}));
       }
-      if(req.method==='GET' && url.pathname==='/api/policy') return send(200,store.policy);
-      if(req.method==='GET' && url.pathname==='/api/capabilities') return send(200,capabilities);
-      if(req.method==='GET' && url.pathname==='/api/proposals') return send(200,store.list().map(p=>({...p,matches:matchCapabilities(p.needs)})));
-      const item = url.pathname.match(/^\/api\/proposals\/([a-zA-Z0-9-]+)$/);
-      if(req.method==='GET' && item) return send(200,store.export(item[1]));
-      if(['POST','DELETE'].includes(req.method)) {
-        if(req.headers.origin!==origin) throw new ExchangeError('Same-origin confirmation required',403);
-        if(req.method==='DELETE' && item) {store.delete(item[1]); return send(200,{deleted:true});}
-        if(req.method==='POST' && url.pathname==='/api/commands') {
-          if(req.headers['content-type']!=='application/json') throw new ExchangeError('JSON required',415);
-          const chunks=[]; let bytes=0; for await(const chunk of req) {bytes+=chunk.length; if(bytes>16000) throw new ExchangeError('Request too large',413); chunks.push(chunk);}
-          const body=Buffer.concat(chunks).toString('utf8');
-          let command; try {command=JSON.parse(body);} catch {throw new ExchangeError('Invalid JSON');}
-          return send(200,store.execute(command,req.headers['idempotency-key']));
+      // Legacy addresses belong only to this local preview. The House adapter
+      // never captures existing root assets or /api/proposals routes.
+      const url = new URL(req.url, origin);
+      if (!house) {
+        if (['/', '/index.html', '/ui.mjs', '/style.css'].includes(url.pathname)) {
+          url.pathname = '/exchange/' + (url.pathname === '/' ? '' : url.pathname.slice(1));
+        } else if (/^\/api\/(policy|capabilities|proposals|commands)(\/|$)/.test(url.pathname)) {
+          url.pathname = url.pathname.replace('/api/', '/api/exchange/');
         }
       }
-      send(404,{error:'Not found'});
-    } catch(error) {send(error.status || 500,{error:error.status?error.message:'Internal error'});}
+      const fallback = house ?? {fetch: () => new Response(JSON.stringify({error: 'Not found'}), {
+        status: 404, headers: {'Content-Type': 'application/json', 'Cache-Control': 'no-store'},
+      })};
+      const worker = withHouseExchange(fallback, {review: {store, assets, origin}});
+      const headers = new Headers();
+      for (const [key, value] of Object.entries(req.headers)) {
+        if (Array.isArray(value)) for (const part of value) headers.append(key, part);
+        else if (value !== undefined) headers.set(key, value);
+      }
+      const init = {method: req.method, headers};
+      if (!['GET', 'HEAD'].includes(req.method)) {
+        init.body = Readable.toWeb(req);
+        init.duplex = 'half';
+      }
+      const response = await worker.fetch(new Request(url, init), {}, {});
+      res.writeHead(response.status, Object.fromEntries(response.headers));
+      res.end(Buffer.from(await response.arrayBuffer()));
+    } catch {
+      if (!res.headersSent) res.writeHead(500, {'Content-Type': 'application/json', 'Cache-Control': 'no-store'});
+      res.end(JSON.stringify({error: 'Internal error'}));
+    }
   });
 }
-if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
-  const data = join(directory,'.data'); mkdirSync(data,{recursive:true,mode:0o700});
-  const store=openStore(join(data,'demo.sqlite'));
-  const server=createExchangeServer(store);
-  server.listen(8788,'127.0.0.1',()=>console.log('Demo-only exchange: http://127.0.0.1:8788 — synthetic data only; no real execution'));
-  const cleanup=setInterval(()=>store.purge(),60000); cleanup.unref();
-  for(const signal of ['SIGINT','SIGTERM']) process.once(signal,()=>server.close(()=>{clearInterval(cleanup);store.close();process.exit(0);}));
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const data = join(directory, '.data');
+  mkdirSync(data, {recursive: true, mode: 0o700});
+  const store = openStore(join(data, 'demo.sqlite'));
+  const server = createExchangeServer(store);
+  server.listen(8788, '127.0.0.1', () => console.log('House exchange review: http://127.0.0.1:8788/exchange/ — synthetic local data only'));
+  const cleanup = setInterval(() => store.purge(), 60000);
+  cleanup.unref();
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => server.close(() => {
+    clearInterval(cleanup);
+    store.close();
+    process.exit(0);
+  }));
 }
+

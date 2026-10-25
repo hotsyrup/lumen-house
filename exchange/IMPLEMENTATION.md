@@ -4,7 +4,7 @@
 
 This is an **isolated, local-only prototype**, not a launched exchange or an integration into the deployed House application. It is additive: existing root pages, discovery skill, services, data, access, budgets, schedules and payment paths must remain unchanged.
 
-The inspected repository baseline is `9c87ced2213cdbf306c70a3100c83d354bc41a21`. Its README describes a dependency-free GitHub Pages site; `CNAME` identifies `lumenhouse.xyz`. It contains no application backend, authenticated intake model, database schema or deployment pipeline to reuse. The current production House is a separate application implementation whose authoritative source is not available in this checkout. The public repository is therefore insufficient evidence of current production architecture or deployment parity.
+The public repository baseline is `9c87ced2213cdbf306c70a3100c83d354bc41a21`, an older static landing site. The authoritative Mac sources and retained release artifacts have now been inspected. They include a composed public runtime and a separate authenticated record service. Existing checkout changes and all newer private source remain local; they are not included in this PR. See [reconciliation](RECONCILIATION.md) for the public-safe conclusions and exact scope.
 
 **Integration gate:** reconcile this prototype with the authoritative application source and deployed version before adopting routes, schemas or UI. Do not deploy this landing-site checkout over the current House. No production migration, merge, deployment, payment, allowance, credential access or service activation is authorized by this milestone.
 
@@ -55,7 +55,7 @@ For future production integration, require all of the following:
 - Owner-approved policy, scoped identity and authorization on every state-changing operation; deny by default.
 - Separate demo and real datasets, keys, routes and UI; no silent promotion of demo records.
 - Explicit finite caps per resource, actor and period, with reservations counted before admission. Reject over-cap work; release reservations only through validated terminal transitions.
-- Atomic reservation/event/idempotency updates, stable request fingerprints (this prototype requires identical serialized command field ordering on retries) and conflict rejection when a key is reused for different intent.
+- Atomic reservation/event/idempotency updates, canonical request intent matching and conflict rejection when a key is reused for different intent. Legacy SQLite SHA-256 retries remain supported using the original field ordering; new retries ignore object field order.
 - Restart-safe audit and recovery, concurrency control across processes, schema migration/version handling, retention-compatible backup policy and corruption detection. The local SQLite transaction is not a complete production persistence adapter.
 - Owner escalation for missing authority, unavailable capability, human work, ambiguous terms, cap changes, evidence disputes or attempted execution. Escalation records do not contact anyone automatically.
 - Independent integration tests for existing House routes and data to establish that the exchange is genuinely additive.
@@ -77,14 +77,14 @@ node exchange/server.mjs
 node --test exchange/*.test.mjs
 ```
 
-Use the loopback address printed by the server. No dependency installation is needed. Data is stored in ignored `exchange/.data/demo.sqlite` with a seven-day expiry, swept on access and every minute while the server runs. The SQLite schema is created in `store.mjs`. Local exports include event snapshots; review before sharing. Deletion removes logical proposal/event/idempotency rows but does **not** guarantee physical erasure from SQLite free pages, WAL, filesystem snapshots or backups. Stop the server and remove the entire local data directory when discarding the demo. Never use sensitive content.
+Open `/exchange/` at the loopback address printed by the server. No dependency installation is needed. Data is stored in ignored `exchange/.data/demo.sqlite` with a seven-day expiry, swept on access and every minute while the server runs. The local SQLite schema is created in `store.mjs`, with a guarded version marker and legacy replay support. The portable `core.mjs` owns validation and transitions; adapters own atomic commits, identity and authorization. Snapshot rewrites are bounded to 100 retained proposals and 100 events per proposal, with a final cancellation slot reserved. This local adapter is not suitable as the production journal. Local exports include event snapshots; review before sharing. Deletion removes logical proposal/event/idempotency rows but does **not** guarantee physical erasure from SQLite free pages, WAL, filesystem snapshots or backups. Stop the server and remove the entire local data directory when discarding the demo. Never use sensitive content.
 
 Keep the server on loopback; it is not a public multi-user service and must not be placed behind a public tunnel. Use fictional demonstration data only. Tests should cover repeated requests, changed-payload idempotency conflicts, invalid transitions, cap exhaustion, release on cancellation/completion, replay after restart, disabled real execution and export/deletion behavior. A passing focused test suite does not establish production readiness or deployed UI parity.
 
 ## Review and adoption sequence
 
 1. Inspect the local prototype and its tests; identify gaps rather than interpreting simulated outcomes as fulfillment.
-2. Obtain the authoritative application source and compare its routes, persistence, authentication, intake conventions, public offers and deployment protections with the deployed version.
+2. Keep the authoritative application source, routes, persistence, authentication, intake conventions, public offers and deployment receipts reconciled; retained local receipts do not replace fresh provider verification.
 3. Adapt the exchange behind a default-off feature gate and reuse existing intake models only where their semantics and consent boundaries match.
 4. Agree identity/authorization, lifecycle dispute handling, retention/deletion, limits and audit design with the owner. Any real grants or human quotes require separate explicit authorization.
 5. Add production-adapter, migration, regression, abuse and multi-actor concurrency tests. Review the exact staged diff for private information.
@@ -94,7 +94,9 @@ No production readiness, paid fulfillment, adoption, available human capacity or
 
 ## Verified at this milestone
 
-- Node built-in test runner: 18 tests pass (store lifecycle, role simulation, request guards, caps, durability, idempotency, expiry/deletion, stale-term rejection and catalog limits).
+- Node built-in test runner: 47 tests pass, including portable lifecycle/schema guards, legacy SQLite replay, adapter passthrough, body/origin guards, explicit offline export and expiry.
 - JavaScript syntax checks pass. Existing tracked House files are unchanged.
-- Browser rendering and interactive UI checks remain unverified: the available headless browser could not launch in the review sandbox. API/static-response tests are not visual QA.
-- No production integration, real authentication, migration, payout, live fulfillment or deployment has been tested or enabled.
+- Mac in-app browser QA passed at desktop and mobile sizes: proposal, counteroffer, agreement, delivery, acceptance, completion, separate provenance/evaluation, local draft download and return to the preserved House catalog. Native prompt dialogs failed in this browser; the prototype now uses accessible in-page dialogs. This is synthetic local QA, not production identity or fulfillment proof.
+- Default-off composition matched 252 local responses against the frozen newer House runtime and its 114-file asset set. No external request occurred. This is retained-artifact parity, not fresh provider verification.
+- No production record integration, real authentication, production migration, payout, live fulfillment or deployment has been tested or enabled.
+
