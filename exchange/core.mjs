@@ -59,8 +59,9 @@ function validateState(state) {
       proposal.reservedUnits === (['agreed', 'delivered', 'accepted'].includes(proposal.state) ? proposal.terms.units : 0), 'Invalid exchange state', 503);
     ids.add(proposal.id);
   }
-  requireThat(state.proposals.length <= POLICY.maxRetainedProposals &&
-    state.proposals.filter(proposal => !terminal(proposal.state)).length <= POLICY.maxOpen &&
+  // Older demo writers had no retained-history caps. Their valid records must
+  // remain readable/exportable and removable; caps are command admission rules.
+  requireThat(state.proposals.filter(proposal => !terminal(proposal.state)).length <= POLICY.maxOpen &&
     state.proposals.reduce((total, proposal) => total + proposal.reservedUnits, 0) <= POLICY.totalReservedUnits, 'Invalid exchange state', 503);
   const keys = new Set();
   for (const row of state.requests) {
@@ -73,7 +74,7 @@ function validateState(state) {
     ['requester', 'provider', 'owner'].includes(row.event.actor) && validTime(row.event.at)) &&
     state.proposals.every(proposal => {
       const count = state.events.filter(row => row.proposalId === proposal.id).length;
-      return count >= 1 && count <= POLICY.maxEventsPerProposal;
+      return count >= 1;
     }) && state.events.length === state.requests.length, 'Invalid exchange state', 503);
 }
 
@@ -101,6 +102,12 @@ function commandResult(state, command, key, {now, id, legacyFingerprint}) {
       (typeof legacyFingerprint === 'function' && prior.fingerprint === legacyFingerprint(command)), 'Idempotency key reused with different command', 409);
     return copy(prior.response);
   }
+
+  // Permit exact retries and cleanup of legacy history without permitting new
+  // history growth. Delete or expire over-cap records before admitting commands.
+  requireThat(state.proposals.length <= POLICY.maxRetainedProposals &&
+    state.proposals.every(proposal => state.events.filter(row => row.proposalId === proposal.id).length <= POLICY.maxEventsPerProposal),
+  'Legacy history exceeds demo caps; export then delete or expire records before new commands', 409);
 
   const {action, actor} = command;
   let proposal;

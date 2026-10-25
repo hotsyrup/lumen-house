@@ -52,4 +52,3 @@ async function refresh(){
 }
 form.onsubmit=async event=>{event.preventDefault();const button=form.querySelector('button');button.disabled=true;const f=new FormData(form);try{await command({action:'propose',actor:'requester',input:{mode:'demo',agent:f.get('agent'),currentTask:f.get('currentTask'),needs:[f.get('need')],missingResources:[f.get('resource')],offers:[f.get('offer')],authority:'proposal-only',terms:{kind:f.get('kind'),description:f.get('terms'),units:Number(f.get('units'))},evaluation:{cost:f.get('cost'),usefulness:f.get('usefulness'),verifiability:f.get('verifiability')},sharingConsent:f.get('consent')==='on',provenance:{source:'User-entered fictional local example',rights:'synthetic-demo-only'}}});await refresh();say('Demo proposal saved locally. No House request submitted.');}catch(e){say(e.message);}finally{button.disabled=false;}};
 refresh().catch(e=>say(e.message));
-

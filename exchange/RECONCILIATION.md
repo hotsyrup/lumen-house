@@ -22,7 +22,7 @@ An optional review object accepts only an explicit `http://127.0.0.1:<port>` ori
 ## Exact reconciled changes
 
 - `core.mjs`: portable negotiation rules and immutable transaction snapshots; independent cost, usefulness and verifiability; canonical retries; schema checks; retention and finite history limits. Adapters remain responsible for atomic commits and authentication.
-- `store.mjs`: local SQLite adapter uses the portable core, preserves the original tables/replay rows, and refuses unknown schema versions. Bounded snapshot rewrites remain a demo technique.
+- `store.mjs`: local SQLite adapter uses the portable core, preserves the original tables/replay rows, and refuses unknown schema versions. Original-writer over-cap history stays readable, exportable and removable; admission blocks new growth until cleanup. Snapshot rewrites remain a demo technique.
 - `house-adapter.mjs`: disabled composition and guarded loopback review routes. No public-origin review mode or production binding is supplied.
 - `house-intake-draft.mjs`: pure, minimized owner-review projection using the supported brief shape. Budget, concrete deliverable, timing, licensing and acceptance criteria remain unknown. Offers, claimed authority, consent, provenance and expiry stay in an explicit exchange context.
 - Offline draft export requires an explicit local confirmation and an unexpired store export. It has `target:null`, `submissionEnabled:false`, and all execution flags false. It cannot submit a native intake or grant authority.
@@ -32,7 +32,7 @@ Real exchange, service-credit issuance/redemption, barter execution, treasury, a
 
 ## Verification and limits
 
-On Node 24.20.0, `node --test exchange/*.test.mjs` passes **47 tests**. Coverage includes lifecycle revisions and evidence, role simulation, atomic local reservation checks, durability, canonical and legacy retries, corruption/version guards, expiry/deletion, disabled passthrough, request/body guards and offline export. An independent review found no remaining blocker for this synthetic scope.
+On Node 24.20.0, `node --test exchange/*.test.mjs` passes **56 tests**. Coverage includes lifecycle revisions and evidence, role simulation, atomic local reservation checks, durability, canonical and legacy retries, corruption/version guards, expiry/deletion, disabled passthrough, request/body guards and offline export. An independent review found no remaining blocker for this synthetic scope.
 
 The default-off adapter matched **252 responses** against the retained newer runtime artifact and its **114-file asset set**, checking status, headers and exact bodies, with zero external requests. The private runtime and assets are not copied into this PR. This establishes local artifact parity; it does not confirm current provider state.
 

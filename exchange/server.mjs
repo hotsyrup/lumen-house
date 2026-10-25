@@ -11,6 +11,12 @@ const assetNames = ['index.html', 'ui.mjs', 'style.css'];
 
 export function createExchangeServer(store, {house} = {}) {
   const assets = Object.fromEntries(assetNames.map(name => [name, readFileSync(join(directory, name), 'utf8')]));
+  if (!house) {
+    assets['index.html'] = assets['index.html'].replace(
+      '<a data-house-catalog href="/">← House catalog</a>',
+      '<span>Standalone local demo</span>',
+    );
+  }
   return createServer(async (req, res) => {
     const origin = `http://127.0.0.1:${res.socket.localPort}`;
     try {
@@ -66,4 +72,3 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exit(0);
   }));
 }
-
