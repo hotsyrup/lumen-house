@@ -1,13 +1,8 @@
 """Synthetic request-preparation tests. No wallet, provider or settlement calls."""
 from copy import deepcopy
 from datetime import datetime
-import importlib.util
-from pathlib import Path
 import unittest
-
-spec = importlib.util.spec_from_file_location("payment_request_core", Path(__file__).with_name("core.py"))
-core = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(core)
+from . import core
 
 
 def ms(value):
@@ -84,6 +79,11 @@ class RequestCoreTests(unittest.TestCase):
                                              "timezone": "America/Los_Angeles", "currency": "USDC", "network": "base", "asset": "usdc", "decimals": 6})
         self.assertFalse(policy["executionEnabled"])
         self.assertFalse(policy["handoffAvailable"])
+        with self.assertRaises(TypeError):
+            core.LIMITS["perJobAtomic"] = 5000000
+        policy["ceilings"]["perJobAtomic"] = 5000000
+        self.assertEqual(h.policy()["ceilings"]["perJobAtomic"], 100000)
+        self.assert_error(400, "invalid_integer", lambda: h.prepare(amount=100001))
 
     def test_native_paid_amount_is_exact_not_a_fixed_reward_and_fees_are_unknown(self):
         h = Harness()
@@ -285,6 +285,109 @@ class RequestCoreTests(unittest.TestCase):
         saved = h.operation({"kind": "get", "principal": OWNER, "id": row["id"]})
         self.assertEqual(saved["principalHoldAtomic"], 100000)
         self.assertEqual(saved["source"]["payee"], source()["payee"])
+
+    def test_report_state_is_exact_unverified_owner_observation(self):
+        h = Harness()
+        row = h.prepare(amount=1)
+        row = h.command("report_outcome", {"outcome": "unknown", "reason": "Owner cannot confirm a wallet outcome"}, request_id=row["id"])
+        for mutate in (
+            lambda s: s["records"][row["id"]].update(automaticPayout=True),
+            lambda s: s["records"][row["id"]]["outcomeReport"].update(verified=True),
+            lambda s: s["records"][row["id"]]["outcomeReport"].update(ownerId="forged-owner"),
+            lambda s: s["records"][row["id"]]["outcomeReport"].update(feeApproval=True),
+            lambda s: s["records"][row["id"]]["fees"].update(approved=0),
+            lambda s: s["records"][row["id"]].update(principalHoldAtomic=True),
+        ):
+            invalid = deepcopy(h.state)
+            mutate(invalid)
+            before = deepcopy(invalid)
+            with self.assertRaises(core.ControlError) as caught:
+                core.validate_state(invalid)
+            self.assertEqual(caught.exception.status, 503)
+            self.assertEqual(invalid, before)
+        before = deepcopy(h.state)
+        self.assert_error(400, "invalid_text", lambda: h.command("configure", {"approvalReference": "\ud800"}))
+        self.assertEqual(h.state, before)
+
+
+class FullSizeRequestHeadroomTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        h = Harness()
+        admitted = 0
+        while admitted < core.MAX_RECORDS:
+            before = core.canonical_json(h.state)
+            try:
+                h.prepare(job=f"size-job-{admitted}", amount=1)
+                admitted += 1
+            except core.ControlError as error:
+                if (error.status, error.code) != (409, "state_capacity_reached") or core.canonical_json(h.state) != before:
+                    raise AssertionError("Admission must preserve every existing hold exactly") from error
+                break
+        else:
+            raise AssertionError("Real byte/projection admission boundary not reached")
+        # A duplicate-job alias adds only a bound retry key. It must obey the
+        # same future-report reserve, rather than consuming reserved headroom.
+        aliases = 0
+        while aliases < core.MAX_RETRIES:
+            before = core.canonical_json(h.state)
+            try:
+                h.prepare(job="size-job-0", amount=1, key=f"size-alias-{aliases}")
+                aliases += 1
+            except core.ControlError as error:
+                if error.code != "state_capacity_reached" or core.canonical_json(h.state) != before:
+                    raise AssertionError("Alias admission must roll back exactly") from error
+                break
+        else:
+            raise AssertionError("Aliases bypassed the future-report reserve")
+        projected = core._projected_size(h.state)
+        if not core.MAX_SAFETY_BYTES * 0.99 <= projected <= core.MAX_SAFETY_BYTES:
+            raise AssertionError("Fixture must approach the actual safety reserve boundary")
+        cls.state, cls.seq, cls.count, cls.projected = deepcopy(h.state), h.seq, admitted, projected
+        print("PAYMENT_HEADROOM_ADMISSION " + core.canonical_json({
+            "records": admitted, "aliases": aliases, "bytes": len(core.canonical_json(h.state).encode("utf-8")),
+            "projectedBytes": projected, "normalLimit": core.MAX_STATE_BYTES,
+            "safetyLimit": core.MAX_SAFETY_BYTES, "nativeLimit": 1048576}), flush=True)
+
+    def test_real_size_reports_controls_and_recovery_always_keep_principal_writable(self):
+        h = Harness(False)
+        h.state, h.seq = deepcopy(self.state), self.seq
+        original_bindings = {rid: (r["obligationKey"], r["sourceHash"], r["requestHash"], r["principalHoldAtomic"]) for rid, r in h.state["records"].items()}
+        maximum = len(core.canonical_json(h.state).encode("utf-8"))
+        for index, row in enumerate(list(h.state["records"].values())):
+            h.command("report_outcome", {"outcome": ("failed", "unknown", "wallet_cancelled")[index % 3], "reason": "\0" * 300}, request_id=row["id"])
+            current = len(core.canonical_json(h.state).encode("utf-8"))
+            maximum = max(maximum, current)
+            self.assertLessEqual(current, self.projected)
+            self.assertLessEqual(current, core.MAX_SAFETY_BYTES)
+        # Maximum JSON-escaped approval metadata and repeated control-history
+        # rollover are included in the initial projection; no constant patching.
+        h.command("configure", {"approvalReference": "\0" * 500})
+        h.command("open")
+        self.assertGreater(len(core.canonical_json(h.state).encode("utf-8")), core.MAX_STATE_BYTES)
+        duplicate = h.prepare(job="size-job-0", amount=1, key="after-all-outcomes")
+        self.assertEqual(duplicate["principalHoldAtomic"], 1)
+        self.assertEqual(len(h.state["records"]), self.count)
+        for _ in range(core.MAX_AUDIT + 32):
+            h.command("stop", {"reason": "No pending principal may be discarded"})
+        original = deepcopy(h.state)
+        recovered = core.recover_state(h.state, now=h.now)
+        self.assertEqual(h.state, original)
+        h.state = recovered
+        self.assertTrue(h.state["stopped"])
+        self.assertTrue(all(r["disabled"] for r in h.state["retries"]))
+        self.assertEqual(len(h.state["audit"]), core.MAX_AUDIT)
+        self.assertGreater(h.state["auditDropped"], 0)
+        self.assertEqual({rid: (r["obligationKey"], r["sourceHash"], r["requestHash"], r["principalHoldAtomic"]) for rid, r in h.state["records"].items()}, original_bindings)
+        self.assertEqual(h.policy()["exposure"]["heldPrincipalAtomic"], self.count)
+        self.assertEqual(h.state["settledPrincipalAtomic"], 0)
+        self.assertLessEqual(len(core.canonical_json(h.state).encode("utf-8")), self.projected)
+        core.validate_state(h.state)
+        print("PAYMENT_HEADROOM_REPORTED " + core.canonical_json({
+            "records": self.count, "maximumObservedBytes": maximum,
+            "finalBytes": len(core.canonical_json(h.state).encode("utf-8")),
+            "heldAtomic": h.policy()["exposure"]["heldPrincipalAtomic"],
+            "controlRepeats": core.MAX_AUDIT + 32, "auditDropped": h.state["auditDropped"]}), flush=True)
 
 
 if __name__ == "__main__":

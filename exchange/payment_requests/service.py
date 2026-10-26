@@ -13,17 +13,18 @@ ROUTE = re.compile(re.escape(PREFIX) + '/(' + ID + r')(?:/(commands|records)(?:/
 
 
 class PaymentRequestService:
-    def __init__(self, repository, identity, *, enabled=False, authorized_owner_id=None,
+    def __init__(self, repository, identity, *, enabled=False, authorized_owner_id=None, authorized_tenant_id=None,
                  authorize_scope=None, source_reader=None):
         if type(enabled) is not bool or getattr(identity, 'repository', None) is not repository:
             raise ValueError('Explicit gate and exact native identity repository required')
-        if enabled and (not isinstance(authorized_owner_id, str) or re.fullmatch(ID, authorized_owner_id) is None):
-            raise ValueError('Explicit owner installation binding required')
+        if enabled and any(not isinstance(value, str) or re.fullmatch(ID, value) is None
+                           for value in (authorized_owner_id, authorized_tenant_id)):
+            raise ValueError('Explicit single owner and tenant installation binding required')
         if authorize_scope is None:
             from pilot_cloud_scope import authorize_cloud_command
             authorize_scope = authorize_cloud_command
         self.repository, self.identity, self.enabled = repository, identity, enabled
-        self.owner_id, self.authorize_scope = authorized_owner_id, authorize_scope
+        self.owner_id, self.tenant_id, self.authorize_scope = authorized_owner_id, authorized_tenant_id, authorize_scope
         self.tables = PaymentTables(repository) if enabled else None
         self.reader = source_reader or NativePaidJobReader(repository)
         if getattr(self.reader, 'repository', None) is not repository:
@@ -33,6 +34,18 @@ class PaymentRequestService:
         current, instant = self.identity._current(principal)
         if current.role != 'owner' or current.id != self.owner_id:
             raise ControlError(403, 'exact_payment_request_owner_required')
+        # Native paid jobs belong to an owner, not an exchange tenant. One
+        # installation is pinned to one tenant so neither job deduplication nor
+        # the approved payer budget can be multiplied across that owner's tenants.
+        if tenant_id != self.tenant_id:
+            raise ControlError(403, 'exact_payment_request_tenant_required')
+        # A later installation change must not reset the payer budget by moving
+        # to another tenant. Retained state is never deleted; this check is under
+        # the same writer transaction as the first configuration/state insert.
+        if self.repository.connection.execute(
+                'SELECT 1 FROM p_payment_request_state p JOIN x_exchange_tenants t USING(tenant_id) '
+                'WHERE t.owner_id=? AND p.tenant_id!=? LIMIT 1', (current.id, tenant_id)).fetchone():
+            raise ControlError(409, 'payment_request_payer_already_bound')
         owner = self.tables.tenant_owner(tenant_id)
         row = self.repository.connection.execute(
             'SELECT native_role,role,scopes_json,active,expires_at FROM x_exchange_memberships WHERE tenant_id=? AND principal_id=?',
@@ -59,6 +72,17 @@ class PaymentRequestService:
         if not current:
             view['sourceHold'] = 'current_source_requires_owner_reconciliation'
         return view
+
+    def prepare_for_accepted_job(self, principal, job_id):
+        """Derived draft after native owner acceptance; no approval is invented.
+
+        The HTTP adapter invokes this only after successful native acceptance.
+        Replaying that acceptance safely retries preparation after a crash. This
+        also rechecks all current native records and the caller's credential.
+        """
+        return self.dispatch('POST', PREFIX + '/' + str(self.tenant_id) + '/commands', {}, principal,
+                             {'action': 'prepare', 'input': {'jobId': job_id}},
+                             'accepted-job-' + digest({'jobId': job_id}))[1]
 
     def dispatch(self, method, path, params, principal, body=None, key=None):
         if not self.enabled:

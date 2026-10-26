@@ -9,7 +9,6 @@ import fcntl
 import json
 import os
 import stat
-import uuid
 
 from ..controls import repository as exchange
 from ..controls.errors import RepositoryError
@@ -25,7 +24,7 @@ DDL = (
 )
 # Independently pinned from a synthetic reviewed schema12 plus the DDL above.
 # No expected schema digest is learned from a database being opened.
-SCHEMA13_SHA256 = "PENDING"
+SCHEMA13_SHA256 = "2361d6bd670b144e90e4f02c2517e564432a25054062c251a2af71b1061909c3"
 
 
 def _core():
@@ -80,8 +79,20 @@ def _retain_exposure(before, after):
                 or current["amountAtomic"] != original["amountAtomic"]
                 or current["jobId"] != original["jobId"]
                 or current["sourceHash"] != original["sourceHash"]
+                or current["requestHash"] != original["requestHash"]
                 or current["obligationKey"] != original["obligationKey"]
                 or after["obligations"].get(original["obligationKey"]) != request_id):
+            raise RepositoryError("payment_request_exposure_cannot_be_erased", 409)
+        if original["reportedOutcome"] is not None and (
+                current["reportedOutcome"] != original["reportedOutcome"]
+                or current.get("outcomeReport") != original.get("outcomeReport")):
+            raise RepositoryError("payment_request_exposure_cannot_be_erased", 409)
+    retries = {row["keyHash"]: row for row in after["retries"]}
+    for original in before["retries"]:
+        current = retries.get(original["keyHash"])
+        if (current is None or current["fingerprint"] != original["fingerprint"]
+                or current["requestId"] != original["requestId"]
+                or (original["disabled"] and not current["disabled"])):
             raise RepositoryError("payment_request_exposure_cannot_be_erased", 409)
 
 
@@ -101,6 +112,10 @@ class PaymentTables:
     def tenant(self, tenant_id):
         row = self._db().execute("SELECT tenant_id,owner_id FROM x_exchange_tenants WHERE tenant_id=?", (exchange._identifier(tenant_id),)).fetchone()
         return None if row is None else dict(zip(("tenant_id", "owner_id"), row))
+
+    def tenant_owner(self, tenant_id):
+        tenant = self.tenant(tenant_id)
+        return None if tenant is None else tenant["owner_id"]
 
     def load_state(self, tenant_id):
         row = self._db().execute("SELECT body_json,version FROM p_payment_request_state WHERE tenant_id=?", (exchange._identifier(tenant_id),)).fetchone()

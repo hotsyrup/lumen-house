@@ -70,7 +70,9 @@ class ExchangeTables:
     """
     def __init__(self, repository):
         self.repository = repository
-        if repository.connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+        # The schema13 repository independently validates the full native plus
+        # exchange plus payment schema before composing existing exchange code.
+        if repository.connection.execute("PRAGMA user_version").fetchone()[0] not in (SCHEMA_VERSION, 13):
             raise RepositoryError("exchange_migration_required")
 
     def _db(self):

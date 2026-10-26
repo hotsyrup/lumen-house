@@ -19,6 +19,37 @@ export function formatUsdc(value) {
   return `${whole}.${fraction.replace(/0+$/, '').padEnd(2, '0')}`;
 }
 
+// Freshness is a service annotation, never inferred from retained source hashes.
+// A hold takes precedence over a contradictory current flag.
+export function sourcePresentation(request) {
+  const sourceHold = typeof request?.sourceHold === 'string' && request.sourceHold.trim()
+    ? request.sourceHold.trim().slice(0, 1000) : null;
+  if (request?.sourceCurrent === false || sourceHold) return {
+    state: 'held', tag: 'HISTORICAL REQUEST HELD',
+    title: 'Historical request held; current source requires owner reconciliation',
+    detail: `Source hold: ${sourceHold ?? 'current_source_requires_owner_reconciliation'}. The original request and earned principal hold are retained. Current terms, evidence, payee, and acceptance are not established by this historical view.`,
+    bindingLabel: 'Historical record bindings retained',
+    artifactNote: 'Historical record bindings retained; artifact bytes unavailable.',
+    walletHeading: 'Wallet handoff unavailable while the source is held',
+  };
+  if (request?.sourceCurrent === true) return {
+    state: 'current', tag: 'CURRENT RECORD BINDINGS',
+    title: 'Current record bindings checked',
+    detail: 'The service reports that the current source matches this request at read time. This record check does not verify artifact bytes, wallet ownership, fees, or a usable wallet handoff.',
+    bindingLabel: 'Current record bindings checked',
+    artifactNote: 'Record bindings checked; artifact bytes unavailable.',
+    walletHeading: 'Current records available for owner review; wallet handoff unavailable',
+  };
+  return {
+    state: 'snapshot', tag: 'RECORDED SNAPSHOT ONLY',
+    title: 'Recorded source snapshot; current native source not checked',
+    detail: 'This view contains retained request bindings. An absent freshness annotation is not proof that the native source remains current. The core-only trace does not perform a native source check.',
+    bindingLabel: 'Recorded source bindings shown',
+    artifactNote: 'Recorded source bindings shown; artifact bytes unavailable.',
+    walletHeading: 'Wallet handoff unavailable; source freshness not checked',
+  };
+}
+
 function field(labelText, value, {wide = false, mono = false} = {}) {
   const wrapper = element('div', undefined, wide ? 'wide' : undefined);
   wrapper.append(element('dt', labelText), element('dd', value ?? 'Not recorded', mono ? 'mono' : undefined));
@@ -38,26 +69,33 @@ export function renderPaymentRequest(container, request) {
     return;
   }
   const source = request.source;
+  const presentation = sourcePresentation(request);
   const card = element('article', undefined, 'request-card');
   const top = element('div', undefined, 'request-top');
   const amount = element('div');
   const amountText = element('p', formatUsdc(request.amountAtomic), 'request-amount');
   amountText.append(element('span', source.currency ?? 'USDC'));
-  amount.append(element('p', 'EXACT ACCEPTED PRINCIPAL', 'eyebrow'), amountText,
+  amount.append(element('p', presentation.state === 'current' ? 'EXACT ACCEPTED PRINCIPAL' : 'RECORDED ACCEPTED PRINCIPAL', 'eyebrow'), amountText,
     element('p', 'Held for this earned obligation · no payment sent', 'amount-note'));
-  top.append(amount, element('span', 'AWAITING OWNER WALLET SETUP', 'draft-tag'));
+  top.append(amount, element('span', presentation.tag, `draft-tag ${presentation.state}`));
   const content = element('div', undefined, 'request-content');
+  const sourceStatus = element('aside', undefined, 'source-status');
+  sourceStatus.dataset.sourceState = presentation.state;
+  sourceStatus.append(element('h3', presentation.title), element('p', presentation.detail));
+  content.append(sourceStatus);
   const fields = element('dl', undefined, 'request-fields');
   fields.append(field('Native job', request.jobId ?? source.jobId), field('Worker identity', source.workerId),
-    field('Owner / payer', request.ownerId ?? source.ownerId), field('Source network / asset', `${source.network ?? 'unknown'} / ${source.currency ?? 'unknown'} · ${source.decimals ?? 'unknown'} decimals`));
+    field('Owner / payer', request.ownerId ?? source.ownerId), field('Source network / asset', `${source.network ?? 'unknown'} / ${source.currency ?? 'unknown'} · ${source.decimals ?? 'unknown'} decimals`),
+    field('Principal held', `${formatUsdc(request.principalHoldAtomic)} USDC`),
+    field('Reported outcome', request.reportedOutcome ? `${label(request.reportedOutcome)} · unverified owner report` : 'No outcome reported'));
   const payee = field('Owner-attested payee', source.payee, {wide: true, mono: true});
   payee.append(element('p', 'Owner attestation only. Wallet ownership is not independently verified.', 'payee-note'));
   fields.append(payee);
   content.append(fields);
   const flags = element('div', undefined, 'source-strip');
-  flags.append(element('span', 'Accepted paid record'), element('span', 'Record bindings checked'), element('span', 'Separate owner acceptance'));
+  flags.append(element('span', 'Recorded paid source'), element('span', presentation.bindingLabel), element('span', 'Recorded owner acceptance'));
   content.append(flags);
-  content.append(element('p', 'Record bindings checked; artifact bytes unavailable. A stored digest and size do not verify the delivered content.', 'artifact-note'));
+  content.append(element('p', presentation.artifactNote + ' A stored digest and size do not verify the delivered content.', 'artifact-note'));
   const bindings = element('dl', undefined, 'binding-list');
   for (const [title, hash] of [['Paid terms SHA-256', source.termsHash], ['Terms document hash', source.termsDocumentHash], ['Recorded evidence hash', source.evidenceHash], ['Acceptance SHA-256', source.acceptanceHash]]) {
     const row = element('div', undefined, 'binding-row');
@@ -99,12 +137,14 @@ export function renderPaymentRequest(container, request) {
   digestBox.append(digestText, copy);
   content.append(digestBox, copyStatus);
   const wallet = element('div', undefined, 'wallet-boundary');
-  wallet.append(element('h3', 'Ready for owner review; wallet handoff unavailable'),
+  wallet.append(element('h3', presentation.walletHeading),
     element('p', 'This native host has no verified mobile wallet integration. An actual payment requires your final cryptographic wallet confirmation of the exact payer, payee, asset, network, amount, and disclosed fees.'));
   const unavailable = element('button', undefined, 'wallet-button');
   unavailable.type = 'button';
   unavailable.disabled = true;
-  unavailable.append(element('span', '↗'), document.createTextNode('Wallet confirmation unavailable'));
+  const walletIcon = element('span', '↗');
+  walletIcon.setAttribute('aria-hidden', 'true');
+  unavailable.append(walletIcon, document.createTextNode('Wallet confirmation unavailable'));
   unavailable.setAttribute('aria-describedby', 'wallet-fee-disclosure');
   const fees = element('p', undefined, 'fee-disclosure');
   fees.id = 'wallet-fee-disclosure';
@@ -164,9 +204,17 @@ function selectStep(trace, index) {
   write('step-title', step.label ?? `Recorded step ${index + 1}`);
   write('step-description', step.description ?? 'This snapshot records request preparation only. It does not confer signing or execution authority.');
   write('stop-indicator', step.state?.stopped === false ? 'SYNTHETIC PREPARATION OPEN' : 'PREPARATION STOPPED');
-  renderPaymentRequest($('request-container'), requestFor(step));
+  const request = requestFor(step);
+  renderPaymentRequest($('request-container'), request);
+  const presentation = sourcePresentation(request);
+  write('readiness-title', !request ? 'Accepted paid work must be reviewed. Wallet handoff remains unavailable.'
+    : presentation.state === 'held' ? 'A historical request needs reconciliation. Wallet handoff remains unavailable.'
+    : presentation.state === 'current' ? 'Current record bindings are available to review. Wallet handoff remains unavailable.'
+    : 'A recorded request still needs source review. Wallet handoff remains unavailable.');
   renderExposure(step);
-  $('raw-state').textContent = JSON.stringify({state: step.state ?? null, result: step.result ?? null, policy: step.policy ?? null}, null, 2);
+  $('raw-state').textContent = JSON.stringify({state: step.state ?? null, result: step.result ?? null,
+    policy: step.policy ?? null, requestView: step.request ?? null,
+    annotationFixture: step.annotationFixture ?? null}, null, 2);
 }
 
 function renderTrace(trace) {

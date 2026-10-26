@@ -12,6 +12,15 @@ def _row(connection, sql, values):
     return None if row is None else dict(zip((field[0] for field in cursor.description), row))
 
 
+def _current_until(value, now, code):
+    try:
+        validity = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if validity.utcoffset().total_seconds() != 0 or now >= int(validity.timestamp() * 1000):
+            raise ValueError()
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        raise ControlError(409, code) from None
+
+
 class NativePaidJobReader:
     def __init__(self, repository, *, allow_synthetic=False):
         if type(allow_synthetic) is not bool:
@@ -42,6 +51,7 @@ class NativePaidJobReader:
                 or binding.get('buyer_id') != job['buyer_id'] or binding.get('terms_version') != terms['version']
                 or (binding.get('currency'), binding.get('network'), binding.get('asset')) != ('USDC', 'base', 'usdc')):
             raise ControlError(409, 'native_paid_terms_integrity_failed')
+        _current_until(binding.get('valid_until'), now, 'exact_paid_terms_not_current')
         assents = [_row(db, 'SELECT * FROM wf_assents WHERE engagement_id=? AND version=? AND actor_role=?',
                         (job_id, job['version'], role)) for role in ('owner', 'buyer', 'provider')]
         for role, assent in zip(('owner', 'buyer', 'provider'), assents):
@@ -56,22 +66,26 @@ class NativePaidJobReader:
                 or review['evidence_sha256'] != evidence['evidence_sha256']
                 or evidence['binding_sha256'] != terms['binding_sha256']):
             raise ControlError(409, 'exact_owner_delivery_acceptance_required')
-        # Any original attempt, including failed/unknown, blocks a fresh draft.
+        # Any original authority or intent, including revoked/failed/unknown
+        # history, blocks a fresh draft. This model cannot reconcile or replace it.
         # This lane cannot manufacture a replacement payment or reconcile one.
-        if db.execute('SELECT 1 FROM wf_attempts WHERE engagement_id=? LIMIT 1', (job_id,)).fetchone():
-            raise ControlError(409, 'original_payment_reconciliation_required')
+        for table in ('wf_authorities', 'wf_manifests', 'wf_execution_approvals', 'wf_attempts'):
+            if db.execute('SELECT 1 FROM ' + table + ' WHERE engagement_id=? LIMIT 1', (job_id,)).fetchone():
+                raise ControlError(409, 'original_payment_reconciliation_required')
         identity = _row(db, 'SELECT * FROM wf_identity WHERE id=?', (binding.get('provider_verification_id'),))
         active = _row(db, 'SELECT active FROM r_providers WHERE id=?', (job['provider_id'],))
         if (identity is None or active is None or active['active'] != 1 or identity['subject_id'] != job['provider_id']
                 or identity['subject_role'] != 'provider' or identity['owner_id'] != owner_id
                 or identity['recipient'] != binding['recipient'] or identity['recipient_sha256'] != digest(binding['recipient'])):
             raise ControlError(409, 'exact_worker_payee_binding_required')
-        try:
-            validity = datetime.fromisoformat(identity['valid_until'].replace('Z', '+00:00'))
-            if validity.utcoffset().total_seconds() != 0 or now >= int(validity.timestamp() * 1000):
-                raise ValueError()
-        except (AttributeError, TypeError, ValueError):
-            raise ControlError(409, 'worker_payee_attestation_not_current') from None
+        _current_until(identity['valid_until'], now, 'worker_payee_attestation_not_current')
+        buyer_check = _row(db, 'SELECT * FROM wf_identity WHERE id=?', (binding.get('buyer_verification_id'),))
+        buyer = _row(db, 'SELECT role,active FROM principals WHERE id=?', (job['buyer_id'],))
+        if (buyer_check is None or buyer is None or buyer['role'] != 'buyer' or buyer['active'] != 1
+                or buyer_check['subject_id'] != job['buyer_id'] or buyer_check['subject_role'] != 'buyer'
+                or buyer_check['owner_id'] != owner_id):
+            raise ControlError(409, 'exact_buyer_binding_required')
+        _current_until(buyer_check['valid_until'], now, 'buyer_attestation_not_current')
         # Native attestation is not an independent wallet-ownership proof. Hash
         # and size are retained evidence metadata, not artifact-byte verification.
         return {'tenantId': tenant_id, 'jobId': job_id, 'ownerId': owner_id,
