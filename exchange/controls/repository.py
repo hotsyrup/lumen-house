@@ -70,7 +70,9 @@ class ExchangeTables:
     """
     def __init__(self, repository):
         self.repository = repository
-        if repository.connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+        # The schema13 repository independently validates the full native plus
+        # exchange plus payment schema before composing existing exchange code.
+        if repository.connection.execute("PRAGMA user_version").fetchone()[0] not in (SCHEMA_VERSION, 13):
             raise RepositoryError("exchange_migration_required")
 
     def _db(self):
@@ -143,6 +145,12 @@ def _fingerprints(native):
 def _metadata(connection):
     native, base = _native()
     result = base._metadata(connection, SCHEMA_VERSION, _fingerprints(native), native.FulfillmentRepository._count_tables + TABLES)
+    _validate_exchange_tables(connection)
+    return result
+
+
+def _validate_exchange_tables(connection):
+    """Shared checks for additive reviewed schemas; no migration or grants."""
     journal(connection)
     # json_each constraints are enforced by triggers as well as application
     # validation. Check existing rows during recovery/open, including files
@@ -166,7 +174,6 @@ def _metadata(connection):
                 raise ValueError()
         except (ValueError, TypeError, RepositoryError):
             raise RepositoryError("invalid_exchange_membership") from None
-    return result
 
 
 def native_repository_class():
