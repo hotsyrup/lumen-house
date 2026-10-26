@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Lumen House · Controls review</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./ui.mjs"></script>
+</head>
+<body>
+  <main>
+    <header class="masthead">
+      <a class="wordmark" href="/">LUMEN HOUSE <span>/ EXCHANGE</span></a>
+      <span class="pill">LOCAL REVIEW</span>
+    </header>
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">PRODUCTION CONTROLS / REVIEW ARTIFACT</p>
+      <h1 id="page-title">An agreement needs<br>more than a yes.</h1>
+      <p class="lede">Inspect the independent decisions, evidence, and capacity ledger behind a bounded exchange.</p>
+    </section>
+    <aside class="boundary" aria-label="Review boundary">
+      <span class="status-dot" aria-hidden="true"></span>
+      <div><strong>Synthetic offline review · production disabled</strong><p>No permissions, resources, or money granted. This viewer reads a generated test trace. Its controls only select recorded steps.</p></div>
+    </aside>
+    <p id="load-status" role="status" aria-live="polite">Loading the synthetic trace…</p>
+    <div id="review" hidden>
+      <div class="review-layout">
+        <nav class="timeline panel" aria-label="Recorded lifecycle steps">
+          <div class="panel-heading"><h2>Recorded steps</h2><span id="step-count" class="small"></span></div>
+          <div id="steps"></div>
+        </nav>
+        <section class="state panel" aria-labelledby="selected-label">
+          <div class="selected-heading"><div><p id="step-actor" class="eyebrow"></p><h2 id="selected-label"></h2></div><span id="proposal-status" class="state-badge"></span></div>
+          <p id="selected-description" class="muted"></p>
+          <div class="gate-grid" aria-label="Separate approval boundaries">
+            <article class="gate"><span class="gate-number">01</span><h3>Requester assent</h3><p id="requester-assent"></p><span class="gate-note">Own authenticated identity</span></article>
+            <article class="gate"><span class="gate-number">02</span><h3>Provider assent</h3><p id="provider-assent"></p><span class="gate-note">Own authenticated identity</span></article>
+            <article class="gate"><span class="gate-number">03</span><h3>Owner decision</h3><p id="owner-decision"></p><span class="gate-note">Separate bounded approval</span></article>
+          </div>
+          <dl class="binding-grid"><div><dt>Terms revision</dt><dd id="terms-revision"></dd></div><div><dt>Policy revision</dt><dd id="policy-revision"></dd></div><div class="wide"><dt>Exact terms SHA-256</dt><dd id="terms-hash" class="hash"></dd></div></dl>
+          <div class="evidence"><div class="section-title"><h3>Delivery &amp; acceptance</h3><span id="evidence-status" class="small"></span></div><p id="evidence-description" class="muted"></p><dl><div><dt>Evidence SHA-256</dt><dd id="evidence-hash" class="hash"></dd></div><div><dt>Owner acceptance</dt><dd id="acceptance"></dd></div></dl></div>
+          <div class="capacity"><div class="section-title"><h3>Capacity ledger</h3><span class="small">Internal units · no execution</span></div><p class="muted">Approval reserves units. Acceptance consumes them. Completion does not replenish the limit.</p><div id="resources"></div></div>
+          <div class="safeguards"><span id="stop-status"></span><span id="retention-status"></span></div>
+          <details class="raw"><summary>Inspect the recorded state and result</summary><pre id="raw-state"></pre></details>
+        </section>
+      </div>
+      <section class="validation panel" aria-labelledby="validation-title"><div class="panel-heading"><h2 id="validation-title">Adversarial checks</h2><span id="check-count" class="small"></span></div><ul id="checks"></ul></section>
+      <section class="limits" aria-labelledby="limits-title"><p class="eyebrow">WHAT THIS REVIEW ESTABLISHES</p><h2 id="limits-title">Implementation evidence.<br>Live readiness remains a separate gate.</h2><ul id="limitations"></ul></section>
+    </div>
+    <footer>LOCAL SYNTHETIC ARTIFACT <span>Existing House storefront and financial workflows remain separate.</span></footer>
+  </main>
+</body>
+</html>
